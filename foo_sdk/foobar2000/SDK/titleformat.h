@@ -4,7 +4,7 @@ namespace titleformat_inputtypes {
 
 class NOVTABLE titleformat_text_out {
 public:
-	virtual void write(const GUID & p_inputtype,const char * p_data,t_size p_data_length = infinite) = 0;
+	virtual void write(const GUID & p_inputtype,const char * p_data,t_size p_data_length = ~0) = 0;
 	void write_int(const GUID & p_inputtype,t_int64 val);
 	void write_int_padded(const GUID & p_inputtype,t_int64 val,t_int64 maxval);
 protected:
@@ -50,9 +50,9 @@ public:
 };
 
 //! Standard service for instantiating titleformat_object. Implemented by the core; do not reimplement.
-//! To instantiate, use static_api_ptr_t<titleformat_compiler>.
-class NOVTABLE titleformat_compiler : public service_base
-{
+//! To instantiate, use titleformat_compiler::get().
+class NOVTABLE titleformat_compiler : public service_base {
+	FB2K_MAKE_SERVICE_COREAPI(titleformat_compiler);
 public:
 	//! Returns false in case of a compilation error.
 	virtual bool compile(titleformat_object::ptr & p_out,const char * p_spec) = 0;
@@ -65,22 +65,20 @@ public:
 	void compile_safe_ex(titleformat_object::ptr & p_out,const char * p_spec,const char * p_fallback = "<ERROR>");
 
 	//! Throws a bug check exception when script can't be compiled. For use with hardcoded scripts only.
-	void compile_force(titleformat_object::ptr & p_out,const char * p_spec) {if (!compile(p_out,p_spec)) throw pfc::exception_bug_check_v2();}
+	void compile_force(titleformat_object::ptr & p_out,const char * p_spec) {if (!compile(p_out,p_spec)) uBugCheck();}
 
 
 	static void remove_color_marks(const char * src,pfc::string_base & out);//helper
 	static void remove_forbidden_chars(titleformat_text_out * p_out,const GUID & p_inputtype,const char * p_source,t_size p_source_len,const char * p_forbidden_chars);
 	static void remove_forbidden_chars_string_append(pfc::string_receiver & p_out,const char * p_source,t_size p_source_len,const char * p_forbidden_chars);
 	static void remove_forbidden_chars_string(pfc::string_base & p_out,const char * p_source,t_size p_source_len,const char * p_forbidden_chars);
-
-	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(titleformat_compiler);
 };
 
 
 class titleformat_object_wrapper {
 public:
 	titleformat_object_wrapper(const char * p_script) {
-		static_api_ptr_t<titleformat_compiler>()->compile_force(m_script,p_script);
+		titleformat_compiler::get()->compile_force(m_script,p_script);
 	}
 
 	operator const service_ptr_t<titleformat_object> &() const {return m_script;}
@@ -118,7 +116,7 @@ public:
 	virtual bool process_function(const file_info & p_info,const playable_location & p_location,titleformat_text_out * p_out,const char * p_name,t_size p_name_length,titleformat_hook_function_params * p_params,bool & p_found_flag) = 0;
 	virtual bool remap_meta(const file_info & p_info,t_size & p_index, const char * p_name, t_size p_name_length) = 0;
 	
-	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(titleformat_common_methods);
+	FB2K_MAKE_SERVICE_COREAPI(titleformat_common_methods);
 };
 
 class titleformat_hook_impl_file_info : public titleformat_hook
@@ -132,7 +130,7 @@ protected:
 	const file_info * m_info;
 private:
 	const playable_location & m_location;
-	static_api_ptr_t<titleformat_common_methods> m_api;
+	const titleformat_common_methods::ptr m_api = titleformat_common_methods::get();
 };
 
 class titleformat_hook_impl_splitter : public titleformat_hook {
@@ -175,12 +173,12 @@ public:
 	
 	bool process_field(titleformat_text_out * p_out,const char * p_name,t_size p_name_length,bool & p_found_flag) {
 		if (
-			stricmp_utf8_ex(p_name,p_name_length,"list_index",infinite) == 0
+			pfc::stricmp_ascii_ex(p_name,p_name_length,"list_index",~0) == 0
 			) {
 			p_out->write_int_padded(titleformat_inputtypes::unknown,m_index+1, m_total);
 			p_found_flag = true; return true;
 		} else if (
-			stricmp_utf8_ex(p_name,p_name_length,"list_total",infinite) == 0
+            pfc::stricmp_ascii_ex(p_name,p_name_length,"list_total",~0) == 0
 			) {
 			p_out->write_int(titleformat_inputtypes::unknown,m_total);
 			p_found_flag = true; return true;			
@@ -200,28 +198,44 @@ public:
 	string_formatter_tf(titleformat_text_out * out, const GUID & inputType = titleformat_inputtypes::meta) : m_out(out), m_inputType(inputType) {}
 
 	const char * get_ptr() const {
-		throw pfc::exception_not_implemented();
+		uBugCheck();
 	}
 	void add_string(const char * p_string,t_size p_length) {
 		m_out->write(m_inputType,p_string,p_length);
 	}
 	void set_string(const char * p_string,t_size p_length) {
-		throw pfc::exception_not_implemented();
+		uBugCheck();
 	}
 	void truncate(t_size len) {
-		throw pfc::exception_not_implemented();
+		uBugCheck();
 	}
 	t_size get_length() const {
-		throw pfc::exception_not_implemented();
+		uBugCheck();
 	}
 	char * lock_buffer(t_size p_requested_length) {
-		throw pfc::exception_not_implemented();
+		uBugCheck();
 	}
 	void unlock_buffer() {
-		throw pfc::exception_not_implemented();
+		uBugCheck();
 	}
 
 private:
 	titleformat_text_out * const m_out;
 	const GUID m_inputType;
+};
+
+
+class titleformat_object_cache {
+public:
+	titleformat_object_cache(const char * pattern) : m_pattern(pattern) {}
+	operator titleformat_object::ptr() {
+		PFC_ASSERT(core_api::assert_main_thread());
+		if (m_obj.is_empty()) {
+			titleformat_compiler::get()->compile_force(m_obj, m_pattern);
+		}
+		return m_obj;
+	}
+private:
+	const char * const m_pattern;
+	titleformat_object::ptr m_obj;
 };

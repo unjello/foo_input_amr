@@ -5,6 +5,7 @@
 //! Entrypoint service for user interface modules. Implement when registering an UI module. Do not call existing implementations; only core enumerates / dispatches calls. To control UI behaviors from other components, use ui_control API. \n
 //! Use user_interface_factory_t<> to register, e.g static user_interface_factory_t<myclass> g_myclass_factory;
 class NOVTABLE user_interface : public service_base {
+	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(user_interface);
 public:
 	//!HookProc usage: \n
 	//! in your windowproc, call HookProc first, and if it returns true, return LRESULT value it passed to you
@@ -34,12 +35,28 @@ public:
 	virtual void show_now_playing() = 0;
 
 	static bool g_find(service_ptr_t<user_interface> & p_out,const GUID & p_guid);
-
-	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(user_interface);
 };
 
 template<typename T>
 class user_interface_factory : public service_factory_single_t<T> {};
+
+//! \since 1.4
+//! Extended version to allow explicit control over certain app features.
+class NOVTABLE user_interface_v2 : public user_interface {
+	FB2K_MAKE_SERVICE_INTERFACE( user_interface_v2, user_interface );
+public:
+	//! Allows the core to ask the UI module about a specific feature.
+	virtual bool query_capability( const GUID & cap ) = 0;
+
+	//! Suppress core's shellhook window for intercepting systemwide WM_APPCOMMAND? \n
+	//! Recommended: false - return true only if your UI does this on its own.
+	static const GUID cap_suppress_core_shellhook;
+	//! Suppress coer's integration with with Win10 Universal Volume Control? \n
+	//! Recommended: false - return true only if your UI is explicitly incompatbile with Win10 UVC. \n
+	//! Note that cap_suppress_core_shellhook is queried first, as core can't use UVC if this UI does global WM_APPCOMMAND handling on its own. \n
+	//! Returning true from cap_suppress_core_shellhook implies the same from cap_suppress_core_uvc.
+	static const GUID cap_suppress_core_uvc;
+};
 
 //! Interface class allowing you to override UI statusbar text. There may be multiple callers trying to override statusbar text; backend decides which one succeeds so you will not always get what you want. Statusbar text override is automatically cancelled when the object is released.\n
 //! Use ui_control::override_status_text_create() to instantiate.
@@ -56,8 +73,9 @@ public:
 };
 
 //! Serivce providing various UI-related commands. Implemented by core; do not reimplement.
-//! Instantiation: use static_api_ptr_t<ui_control>.
+//! Instantiation: use ui_control::get() to obtain an instance.
 class NOVTABLE ui_control : public service_base {
+	FB2K_MAKE_SERVICE_COREAPI(ui_control);
 public:
 	//! Returns whether primary UI is visible/unminimized.
 	virtual bool is_visible()=0;
@@ -77,8 +95,6 @@ public:
 	//! @param p_out receives new ui_status_text_override instance.
 	//! @returns true on success, false on failure (out of memory / no GUI loaded / etc)
 	virtual bool override_status_text_create(service_ptr_t<ui_status_text_override> & p_out) = 0;
-
-	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(ui_control);
 };
 
 //! Service called from the UI when some object is dropped into the UI. Usable for modifying drag&drop behaviors such as adding custom handlers for object types other than supported media files.\n
@@ -142,9 +158,10 @@ public:
 };
 
 class NOVTABLE ui_selection_manager : public service_base {
+	FB2K_MAKE_SERVICE_COREAPI(ui_selection_manager);
 public:
-	//! Retrieves current selection.
-	virtual void get_selection(pfc::list_base_t<metadb_handle_ptr> & p_selection) = 0;
+	//! Retrieves the current selection.
+	virtual void get_selection(metadb_handle_list_ref p_selection) = 0;
 	//! Registers a callback. It is recommended to use ui_selection_callback_impl_base class instead of calling this directly.
 	virtual void register_callback(ui_selection_callback * p_callback) = 0;
 	//! Unregisters a callback. It is recommended to use ui_selection_callback_impl_base class instead of calling this directly.
@@ -154,13 +171,21 @@ public:
 
 	//! Retrieves type of the active selection holder. Values same as contextmenu_item caller IDs.
 	virtual GUID get_selection_type() = 0;
-	
-	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(ui_selection_manager);
+};
+
+//! \since 1.0
+class NOVTABLE ui_selection_manager_v2 : public ui_selection_manager {
+	FB2K_MAKE_SERVICE_COREAPI_EXTENSION(ui_selection_manager_v2, ui_selection_manager)
+public:
+	enum { flag_no_now_playing = 1 };
+	virtual void get_selection(metadb_handle_list_ref out, t_uint32 flags) = 0;
+	virtual GUID get_selection_type(t_uint32 flags) = 0;
+	virtual void register_callback(ui_selection_callback * callback, t_uint32 flags) = 0;
 };
 
 class ui_selection_callback {
 public:
-	virtual void on_selection_changed(const pfc::list_base_const_t<metadb_handle_ptr> & p_selection) = 0;
+	virtual void on_selection_changed(metadb_handle_list_cref p_selection) = 0;
 protected:
 	ui_selection_callback() {}
 	~ui_selection_callback() {}
@@ -175,16 +200,44 @@ protected:
 	void ui_selection_callback_activate(bool state = true) {
 		if (state != m_active) {
 			m_active = state;
-			static_api_ptr_t<ui_selection_manager> api;
+			auto api = ui_selection_manager::get();
 			if (state) api->register_callback(this);
 			else api->unregister_callback(this);
 		}
 	}
 
 	//avoid pure virtual function calls in rare cases - provide a dummy implementation
-	void on_selection_changed(const pfc::list_base_const_t<metadb_handle_ptr> & p_selection) {}
+	void on_selection_changed(metadb_handle_list_cref p_selection) {}
 
 	PFC_CLASS_NOT_COPYABLE_EX(ui_selection_callback_impl_base);
+private:
+	bool m_active;
+};
+
+//! \since 1.0
+//! ui_selection_callback implementation helper with autoregistration - do not instantiate statically
+template<unsigned flags>
+class ui_selection_callback_impl_base_ex : public ui_selection_callback {
+protected:
+	enum {
+		ui_selection_flags = flags
+	};
+	ui_selection_callback_impl_base_ex(bool activate = true) : m_active() {ui_selection_callback_activate(activate);}
+	~ui_selection_callback_impl_base_ex() {ui_selection_callback_activate(false);}
+
+	void ui_selection_callback_activate(bool state = true) {
+		if (state != m_active) {
+			m_active = state;
+			auto api = ui_selection_manager_v2::get();
+			if (state) api->register_callback(this, flags);
+			else api->unregister_callback(this);
+		}
+	}
+
+	//avoid pure virtual function calls in rare cases - provide a dummy implementation
+	void on_selection_changed(metadb_handle_list_cref p_selection) {}
+
+	PFC_CLASS_NOT_COPYABLE(ui_selection_callback_impl_base_ex, ui_selection_callback_impl_base_ex<flags>);
 private:
 	bool m_active;
 };

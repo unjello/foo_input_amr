@@ -1,7 +1,9 @@
 #include "stdafx.h"
+#include "cuesheet_index_list.h"
 
-static bool is_numeric(char c) {return c>='0' && c<='9';}
-
+#ifndef _MSC_VER
+#define sprintf_s sprintf
+#endif
 
 bool t_cuesheet_index_list::is_valid() const {
 	if (m_positions[1] < m_positions[0]) return false;
@@ -70,6 +72,16 @@ bool t_cuesheet_index_list::from_infos(file_info const & p_in,double p_base)
 	return found;	
 }
 
+bool t_cuesheet_index_list::is_empty() const {
+	for(unsigned n=0;n<count;n++) if (m_positions[n] != m_positions[1]) return false;
+	return true;
+}
+
+
+
+
+
+
 cuesheet_format_index_time::cuesheet_format_index_time(double p_time)
 {
 	t_uint64 ticks = audio_math::time_to_samples(p_time,75);
@@ -93,10 +105,10 @@ unsigned cuesheet_parse_index_time_ticks_e(const char * p_string,t_size p_length
 	{
 		if (p_string[ptr] == ':')
 		{
-			if (splitptr >= 2) throw std::exception("invalid INDEX time syntax",0);
+			if (splitptr >= 2) throw std::runtime_error("invalid INDEX time syntax");
 			splitmarks[splitptr++] = ptr;
 		}
-		else if (!is_numeric(p_string[ptr])) throw std::exception("invalid INDEX time syntax",0);
+		else if (!pfc::char_is_numeric(p_string[ptr])) throw std::runtime_error("invalid INDEX time syntax");
 	}
 	
 	t_size minutes_base = 0, minutes_length = 0, seconds_base = 0, seconds_length = 0, frames_base = 0, frames_length = 0;
@@ -130,10 +142,4 @@ unsigned cuesheet_parse_index_time_ticks_e(const char * p_string,t_size p_length
 	if (minutes_length > 0) ret += 60 * 75 * pfc::atoui_ex(p_string + minutes_base,minutes_length);
 
 	return ret;	
-}
-
-
-bool t_cuesheet_index_list::is_empty() const {
-	for(unsigned n=0;n<count;n++) if (m_positions[n] != m_positions[1]) return false;
-	return true;
 }

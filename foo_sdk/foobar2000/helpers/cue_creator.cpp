@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "cue_creator.h"
 
 
 namespace {
@@ -10,7 +11,7 @@ namespace {
 		{
 			p_source.meta_format(p_name,m_buffer);
 			m_buffer.replace_byte('\"','\'');
-			uReplaceString(m_buffer,pfc::string8(m_buffer),infinite,"\x0d\x0a",2,"\\",1,false);
+			uReplaceString(m_buffer,pfc::string8(m_buffer),pfc_infinite,"\x0d\x0a",2,"\\",1,false);
 			if (!p_allow_space) m_buffer.replace_byte(' ','_');
 			m_buffer.replace_nontext_chars();
 		}
@@ -36,8 +37,7 @@ static bool is_meta_same_everywhere(const cue_creator::t_entry_list & p_list,con
 	return true;
 }
 
-static const char g_eol[] = "\r\n";
-
+#define g_eol "\r\n"
 
 namespace cue_creator
 {
@@ -108,21 +108,21 @@ namespace cue_creator
 
 			p_out << "  TRACK " << pfc::format_int(iter->m_track_number,2) << " AUDIO" << g_eol;
 
-			if (iter->m_infos.meta_find("title") != infinite)
+			if (iter->m_infos.meta_find("title") != pfc_infinite)
 				p_out << "    TITLE \"" << format_meta(iter->m_infos,"title") << "\"" << g_eol;
 			
-			if (!artist_global && iter->m_infos.meta_find("artist") != infinite)
+			if (!artist_global && iter->m_infos.meta_find("artist") != pfc_infinite)
 				p_out << "    PERFORMER \"" << format_meta(iter->m_infos,"artist") << "\"" << g_eol;
 
-			if (!songwriter_global && iter->m_infos.meta_find("songwriter") != infinite) {
+			if (!songwriter_global && iter->m_infos.meta_find("songwriter") != pfc_infinite) {
 				p_out << "    SONGWRITER \"" << format_meta(iter->m_infos,"songwriter") << "\"" << g_eol;
 			}
 
-			if (iter->m_infos.meta_find("isrc") != infinite) {
+			if (iter->m_infos.meta_find("isrc") != pfc_infinite) {
 				p_out << "    ISRC " << format_meta(iter->m_infos,"isrc") << g_eol;
 			}
 
-			if (!date_global && iter->m_infos.meta_find("date") != infinite) {
+			if (!date_global && iter->m_infos.meta_find("date") != pfc_infinite) {
 				p_out << "    REM DATE " << format_meta(iter->m_infos,"date") << g_eol;
 			}
 
@@ -165,6 +165,12 @@ namespace cue_creator
 	{
 		m_index_list.reset();
 		m_index_list.m_positions[0] = m_index_list.m_positions[1] = p_time;
+	}
+	void t_entry::set_index01(double index0, double index1) {
+		PFC_ASSERT( index0 <= index1 );
+		m_index_list.reset();
+		m_index_list.m_positions[0] = index0;
+		m_index_list.m_positions[1] = index1;
 	}
 
 }

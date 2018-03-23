@@ -1,3 +1,5 @@
+#pragma once
+
 namespace pfc {
 	//helper, const methods only
 	class __stringEmpty : public string_base {
@@ -19,13 +21,23 @@ namespace pfc {
 	class string {
 	public:
 		typedef rcptr_t<string_base const> t_data;
-		typedef rcptr_t<pfc::string8> t_dataImpl;
+		typedef rcptr_t<string8> t_dataImpl;
 		
 		string() : m_content(rcnew_t<__stringEmpty>()) {}
 		string(const char * p_source) : m_content(rcnew_t<string8>(p_source)) {}
-		string(const char * p_source, t_size p_sourceLen) : m_content(rcnew_t<pfc::string8>(p_source,p_sourceLen)) {}
+		string(const char * p_source, t_size p_sourceLen) : m_content(rcnew_t<string8>(p_source,p_sourceLen)) {}
+		string(char * p_source) : m_content(rcnew_t<string8>(p_source)) {}
+		string(char * p_source, t_size p_sourceLen) : m_content(rcnew_t<string8>(p_source,p_sourceLen)) {}
 		string(t_data const & p_source) : m_content(p_source) {}
+		string(string_part_ref source) : m_content(rcnew_t<string8>(source)) {}
 		template<typename TSource> string(const TSource & p_source);
+
+		string(const string& other) : m_content(other.m_content) {}
+		string(string&& other) : m_content(std::move(other.m_content)) {}
+
+		const string& operator=(const string& other) {m_content = other.m_content; return *this;}
+		const string& operator=(string&& other) {m_content = std::move(other.m_content); return *this;}
+
 
 		string const & toString() const {return *this;}
 
@@ -63,12 +75,12 @@ namespace pfc {
 		}
 
 		string toLower() const {
-			pfc::string8_fastalloc temp; temp.prealloc(128);
+			string8_fastalloc temp; temp.prealloc(128);
 			stringToLowerAppend(temp,ptr(),~0);
 			return string(temp.get_ptr());
 		}
 		string toUpper() const {
-			pfc::string8_fastalloc temp; temp.prealloc(128);
+			string8_fastalloc temp; temp.prealloc(128);
 			stringToUpperAppend(temp,ptr(),~0);
 			return string(temp.get_ptr());
 		}
@@ -113,6 +125,7 @@ namespace pfc {
 
 		const char * ptr() const {return m_content->get_ptr();}
 		const char * get_ptr() const {return m_content->get_ptr();}
+		const char * c_str() const { return get_ptr(); }
 		t_size length() const {return m_content->get_length();}
 		t_size get_length() const {return m_content->get_length();}
 
@@ -123,36 +136,60 @@ namespace pfc {
 		static bool isNonTextChar(char c) {return c >= 0 && c < 32;}
 
 		char operator[](t_size p_index) const {
-			PFC_ASSERT(p_index < length());
+			PFC_ASSERT(p_index <= length());
 			return ptr()[p_index];
 		}
 		bool isEmpty() const {return length() == 0;}
 
-		class comparatorCaseSensitive {
+		class _comparatorCommon {
+		protected:
+			template<typename T> static const char * myStringToPtr(const T& val) {return stringToPtr(val);}
+			static const char * myStringToPtr(string_part_ref) {
+				PFC_ASSERT(!"Should never get here"); throw exception_invalid_params();
+			}
+		};
+
+		class comparatorCaseSensitive : private _comparatorCommon {
 		public:
 			template<typename T1,typename T2>
 			static int compare(T1 const& v1, T2 const& v2) {
-				return strcmp(stringToPtr(v1),stringToPtr(v2));
+				if (is_same_type<T1, string_part_ref>::value || is_same_type<T2, string_part_ref>::value) {
+					return compare_ex(stringToRef(v1), stringToRef(v2));
+				} else {
+					return strcmp(myStringToPtr(v1),myStringToPtr(v2));
+				}
+			}
+			static int compare_ex(string_part_ref v1, string_part_ref v2) {
+				return strcmp_ex(v1.m_ptr, v1.m_len, v2.m_ptr, v2.m_len);
 			}
 			static int compare_ex(const char * v1, t_size l1, const char * v2, t_size l2) {
 				return strcmp_ex(v1, l1, v2, l2);
 			}
-
 		};
-		class comparatorCaseInsensitive {
+		class comparatorCaseInsensitive : private _comparatorCommon {
 		public:
 			template<typename T1,typename T2>
 			static int compare(T1 const& v1, T2 const& v2) {
-				return stringCompareCaseInsensitive(stringToPtr(v1),stringToPtr(v2));
+				if (is_same_type<T1, string_part_ref>::value || is_same_type<T2, string_part_ref>::value) {
+					return stringCompareCaseInsensitiveEx(stringToRef(v1), stringToRef(v2));
+				} else {
+					return stringCompareCaseInsensitive(myStringToPtr(v1),myStringToPtr(v2));
+				}
 			}
 		};
-		class comparatorCaseInsensitiveASCII {
+		class comparatorCaseInsensitiveASCII : private _comparatorCommon {
 		public:
 			template<typename T1,typename T2>
 			static int compare(T1 const& v1, T2 const& v2) {
-				return stricmp_ascii(stringToPtr(v1),stringToPtr(v2));
+				if (is_same_type<T1, string_part_ref>::value || is_same_type<T2, string_part_ref>::value) {
+					return compare_ex(stringToRef(v1), stringToRef(v2));
+				} else {
+					return stricmp_ascii(myStringToPtr(v1),myStringToPtr(v2));
+				}
 			}
-
+			static int compare_ex(string_part_ref v1, string_part_ref v2) {
+				return stricmp_ascii_ex(v1.m_ptr, v1.m_len, v2.m_ptr, v2.m_len);
+			}
 			static int compare_ex(const char * v1, t_size l1, const char * v2, t_size l2) {
 				return stricmp_ascii_ex(v1, l1, v2, l2);
 			}
@@ -189,25 +226,26 @@ namespace pfc {
 	class stringp {
 	public:
 		stringp(const char * ptr) : m_ptr(ptr) {}
-		stringp(pfc::string const &s) : m_ptr(s.ptr()), m_s(s._content()) {}
-		stringp(pfc::string_base const &s) : m_ptr(s.get_ptr()) {}
+		stringp(string const &s) : m_ptr(s.ptr()), m_s(s._content()) {}
+		stringp(string_base const &s) : m_ptr(s.get_ptr()) {}
 		template<typename TWhat> stringp(const TWhat& in) : m_ptr(in.toString()) {}
 
 		operator const char*() const {return m_ptr;}
 		const char * ptr() const {return m_ptr;}
 		const char * get_ptr() const {return m_ptr;}
-		pfc::string str() const {return m_s.is_valid() ? pfc::string(m_s) : pfc::string(m_ptr);}
-		operator pfc::string() const {return str();}
-		pfc::string toString() const {return str();}
+		string str() const {return m_s.is_valid() ? string(m_s) : string(m_ptr);}
+		operator string() const {return str();}
+		string toString() const {return str();}
 		t_size length() const {return m_s.is_valid() ? m_s->length() : strlen(m_ptr);}
+		const char * c_str() const { return ptr(); }
 	private:
 		const char * const m_ptr;
-		pfc::string::t_data m_s;
+		string::t_data m_s;
 	};
 
 	template<typename TList>
 	string stringCombineList(const TList & list, stringp separator) {
-		typename TList::const_iterator iter = list.first();
+        typename TList::const_iterator iter = list.first();
 		string acc;
 		if (iter.is_valid()) {
 			acc = *iter;
@@ -217,4 +255,8 @@ namespace pfc {
 		}
 		return acc;
 	}
+
+    class string; 
+    template<> class traits_t<string> : public traits_default {};
+	
 }

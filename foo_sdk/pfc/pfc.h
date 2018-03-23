@@ -1,12 +1,27 @@
 #ifndef ___PFC_H___
 #define ___PFC_H___
 
+// Global flag - whether it's OK to leak static objects as they'll be released anyway by process death
+#ifndef PFC_LEAK_STATIC_OBJECTS
+#define PFC_LEAK_STATIC_OBJECTS 1
+#endif
+
+
+#ifdef __clang__
+// Suppress a warning for a common practice in pfc/fb2k code
+#pragma clang diagnostic ignored "-Wdelete-non-virtual-dtor"
+#endif
+
 #if !defined(_WINDOWS) && (defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64) || defined(_WIN32_WCE))
 #define _WINDOWS
 #endif
 
 
 #define PFC_DLL_EXPORT
+
+// Suppress this line when using PFC outside classic foobar2000
+// When enabled, certain shared.dll methods are referenced
+#define PFC_FOOBAR2000_CLASSIC
 
 #ifdef _WINDOWS
 
@@ -18,11 +33,23 @@
 #define _NO_SYS_GUID_OPERATOR_EQ_	//fix retarded warning with operator== on GUID returning int
 #endif
 
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x500
+// WinSock2.h *before* Windows.h or else VS2017 15.3 breaks
+#include <WinSock2.h>
+#include <windows.h>
+
+#if !defined(PFC_WINDOWS_STORE_APP) && !defined(PFC_WINDOWS_DESKTOP_APP)
+
+#ifdef WINAPI_FAMILY_PARTITION
+#if ! WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+#define PFC_WINDOWS_STORE_APP // Windows store or Windows phone app, not a desktop app
+#endif // #if ! WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+#endif // #ifdef WINAPI_FAMILY_PARTITION
+
+#ifndef PFC_WINDOWS_STORE_APP
+#define PFC_WINDOWS_DESKTOP_APP
 #endif
 
-#include <windows.h>
+#endif // #if !defined(PFC_WINDOWS_STORE_APP) && !defined(PFC_WINDOWS_DESKTOP_APP)
 
 #ifndef _SYS_GUID_OPERATOR_EQ_
 __inline bool __InlineIsEqualGUID(REFGUID rguid1, REFGUID rguid2)
@@ -40,9 +67,13 @@ inline bool operator!=(REFGUID guidOne, REFGUID guidOther) {return !__InlineIsEq
 
 #include <tchar.h>
 
-#elif defined(__GNUC__) && (defined __unix__ || defined __POSIX__)
+#else
+
 #include <stdint.h>
-#include <memory.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h> // memcmp
+
 typedef struct {
         uint32_t Data1;
         uint16_t Data2;
@@ -57,10 +88,6 @@ inline bool operator==(const GUID & p_item1,const GUID & p_item2) {
 inline bool operator!=(const GUID & p_item1,const GUID & p_item2) {
 	return memcmp(&p_item1,&p_item2,sizeof(GUID)) != 0;
 }
-
-#else
-
-#error Only win32 or unix target supported.
 
 #endif
 
@@ -77,31 +104,29 @@ inline bool operator!=(const GUID & p_item1,const GUID & p_item2) {
 #include <stdexcept>
 #include <new>
 
-#include <malloc.h>
-
-#include <stdio.h>
-
-#include <assert.h>
-
-#include <math.h>
-#include <float.h>
-
 #define _PFC_WIDESTRING(_String) L ## _String
 #define PFC_WIDESTRING(_String) _PFC_WIDESTRING(_String)
 
-#ifndef _DEBUG
+#if defined(_DEBUG) || defined(DEBUG)
+#define PFC_DEBUG 1
+#else
+#define PFC_DEBUG 0
+#endif
+
+#if ! PFC_DEBUG
 #define PFC_ASSERT(_Expression)     ((void)0)
 #define PFC_ASSERT_SUCCESS(_Expression) (void)( (_Expression), 0)
 #define PFC_ASSERT_NO_EXCEPTION(_Expression) { _Expression; }
 #else
 
 #ifdef _WIN32
-namespace pfc { void myassert(const wchar_t * _Message, const wchar_t *_File, unsigned _Line); }
-#define PFC_ASSERT(_Expression) (void)( (!!(_Expression)) || (pfc::myassert(PFC_WIDESTRING(#_Expression), PFC_WIDESTRING(__FILE__), __LINE__), 0) )
+namespace pfc { void myassert_win32(const wchar_t * _Message, const wchar_t *_File, unsigned _Line); }
+#define PFC_ASSERT(_Expression) (void)( (!!(_Expression)) || (pfc::myassert_win32(PFC_WIDESTRING(#_Expression), PFC_WIDESTRING(__FILE__), __LINE__), 0) )
 #define PFC_ASSERT_SUCCESS(_Expression) PFC_ASSERT(_Expression)
 #else
-#define PFC_ASSERT(_Expression) assert(_Expression)
-#define PFC_ASSERT_SUCCESS(_Expression) (void)( (_Expression), 0) //FIXME
+namespace pfc { void myassert (const char * _Message, const char *_File, unsigned _Line); }
+#define PFC_ASSERT(_Expression) (void)( (!!(_Expression)) || (pfc::myassert(#_Expression, __FILE__, __LINE__), 0) )
+#define PFC_ASSERT_SUCCESS(_Expression) PFC_ASSERT( _Expression )
 #endif
 
 #define PFC_ASSERT_NO_EXCEPTION(_Expression) { try { _Expression; } catch(...) { PFC_ASSERT(!"Should not get here - unexpected exception"); } }
@@ -109,26 +134,34 @@ namespace pfc { void myassert(const wchar_t * _Message, const wchar_t *_File, un
 
 #ifdef _MSC_VER
 
-#ifdef _DEBUG
+#if PFC_DEBUG
 #define NOVTABLE
 #else
 #define NOVTABLE _declspec(novtable)
 #endif
 
-#ifdef _DEBUG
+#if PFC_DEBUG
 #define ASSUME(X) PFC_ASSERT(X)
 #else
 #define ASSUME(X) __assume(X)
 #endif
 
-#define PFC_DEPRECATE(X) __declspec(deprecated(X))
+#define PFC_DEPRECATE(X) // __declspec(deprecated(X))   don't do this since VS2015 defaults to erroring these
+#define PFC_NORETURN __declspec(noreturn)
+#define PFC_NOINLINE __declspec(noinline)
 #else
 
 #define NOVTABLE
-#define ASSUME(X) assert(X)
+#define ASSUME(X) PFC_ASSERT(X)
 #define PFC_DEPRECATE(X)
+#define PFC_NORETURN __attribute__ ((noreturn))
+#define PFC_NOINLINE
 
 #endif
+
+namespace pfc {
+	void selftest();
+}
 
 #include "int_types.h"
 #include "traits.h"
@@ -144,13 +177,15 @@ namespace pfc { void myassert(const wchar_t * _Message, const wchar_t *_File, un
 #include "order_helper.h"
 #include "list.h"
 #include "ptr_list.h"
-#include "string.h"
+#include "string_base.h"
 #include "string_list.h"
+#include "lockless.h"
 #include "ref_counter.h"
 #include "iterators.h"
 #include "avltree.h"
 #include "map.h"
-#include "profiler.h"
+#include "bit_array_impl_part2.h"
+#include "timers.h"
 #include "guid.h"
 #include "byte_order_helper.h"
 #include "other.h"
@@ -162,5 +197,31 @@ namespace pfc { void myassert(const wchar_t * _Message, const wchar_t *_File, un
 #include "pathUtils.h"
 #include "instance_tracker.h"
 #include "threads.h"
+#include "base64.h"
+#include "primitives_part2.h"
+#include "cpuid.h"
+#include "memalign.h"
+
+#ifdef _WIN32
+#include "synchro_win.h"
+#else
+#include "synchro_nix.h"
+#endif
+
+#include "syncd_storage.h"
+
+#ifdef _WIN32
+#include "win-objects.h"
+#else
+#include "nix-objects.h"
+#endif
+
+#include "event.h"
+
+#include "audio_sample.h"
+#include "wildcard.h"
+#include "filehandle.h"
+
+#define PFC_INCLUDED 1
 
 #endif //___PFC_H___

@@ -48,8 +48,8 @@ protected:
 	~play_callback() {}
 };
 
-//! Standard API (always present); manages registrations of dynamic play_callbacks.
-//! Usage: use static_api_ptr_t<play_callback_manager>.
+//! Standard API (always present); manages registrations of dynamic play_callbacks. \n
+//! Usage: use play_callback_manager::get() to obtain on instance. \n
 //! Do not reimplement.
 class NOVTABLE play_callback_manager : public service_base
 {
@@ -63,20 +63,20 @@ public:
 	//! @p_callback Previously registered interface to unregister.
 	virtual void FB2KAPI unregister_callback(play_callback * p_callback) = 0;
 
-	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(play_callback_manager);
+	FB2K_MAKE_SERVICE_COREAPI(play_callback_manager);
 };
 
 //! Implementation helper.
 class play_callback_impl_base : public play_callback {
 public:
 	play_callback_impl_base(unsigned p_flags = ~0) {
-		static_api_ptr_t<play_callback_manager>()->register_callback(this,p_flags,false);
+		play_callback_manager::get()->register_callback(this,p_flags,false);
 	}
 	~play_callback_impl_base() {
-		static_api_ptr_t<play_callback_manager>()->unregister_callback(this);
+		play_callback_manager::get()->unregister_callback(this);
 	}
 	void play_callback_reregister(unsigned flags, bool refresh = false) {
-		static_api_ptr_t<play_callback_manager> api;
+		auto api = play_callback_manager::get();
 		api->unregister_callback(this);
 		api->register_callback(this,flags,refresh);
 	}
@@ -122,7 +122,7 @@ class playback_statistics_collector_factory_t : public service_factory_single_t<
 
 
 
-//! Helper providing a simplified interface for receiving playback events, in case your code does not care about the kind of playback event that has occured; useful typically for GUI/rendering code that just refreshes some control whenever a playback state change occurs.
+//! Helper providing a simplified interface for receiving playback events, in case your code does not care about the kind of playback event that has occurred; useful typically for GUI/rendering code that just refreshes some control whenever a playback state change occurs.
 class playback_event_notify : private play_callback_impl_base {
 public:
 	playback_event_notify(playback_control::t_display_level level = playback_control::display_level_all) : play_callback_impl_base(GrabCBFlags(level)) {}
@@ -146,4 +146,11 @@ private:
 	void on_playback_dynamic_info_track(const file_info & p_info) {on_playback_event();}
 	void on_playback_time(double p_time) {on_playback_event();}
 	void on_volume_change(float p_new_val) {on_playback_event();}
+};
+
+class playback_volume_notify : private play_callback_impl_base {
+public:	
+	playback_volume_notify() : play_callback_impl_base(flag_on_volume_change) {}
+	// override me
+	void on_volume_change(float p_new_val) {}
 };

@@ -17,3 +17,11 @@ class event_logger_fallback : public event_logger {
 public:
 	void log_entry(const char * line, unsigned) {console::print(line);}
 };
+
+class NOVTABLE event_logger_recorder : public event_logger {
+	FB2K_MAKE_SERVICE_INTERFACE( event_logger_recorder , event_logger );
+public:
+	virtual void playback( event_logger::ptr playTo ) = 0;
+	
+	static event_logger_recorder::ptr create();
+};

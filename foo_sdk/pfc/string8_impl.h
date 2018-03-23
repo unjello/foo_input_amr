@@ -1,3 +1,5 @@
+#pragma once
+
 namespace pfc {
 
 template<template<typename> class t_alloc>
@@ -7,23 +9,17 @@ void string8_t<t_alloc>::add_string(const char * ptr,t_size len)
 		add_string(string8(ptr,len));
 	} else {
 		len = strlen_max(ptr,len);
-		makespace(used+len+1);
-		pfc::memcpy_t(m_data.get_ptr() + used,ptr,len);
-		used+=len;
-		m_data[used]=0;
+		add_string_nc(ptr, len);
 	}
 }
 
 template<template<typename> class t_alloc>
 void string8_t<t_alloc>::set_string(const char * ptr,t_size len) {
 	if (m_data.is_owned(ptr)) {
-		set_string(string8(ptr,len));
+		set_string_(string8(ptr,len));
 	} else {
 		len = strlen_max(ptr,len);
-		makespace(len+1);
-		pfc::memcpy_t(m_data.get_ptr(),ptr,len);
-		used=len;
-		m_data[used]=0;
+		set_string_nc(ptr, len);
 	}
 }
 

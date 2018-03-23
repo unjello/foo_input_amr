@@ -1,5 +1,6 @@
-#ifndef _DIALOG_RESIZE_HELPER_H_
-#define _DIALOG_RESIZE_HELPER_H_
+#pragma once
+
+#ifdef FOOBAR2000_DESKTOP_WINDOWS
 
 BOOL GetChildWindowRect(HWND wnd,UINT id,RECT* child);
 
@@ -45,4 +46,4 @@ public:
 	PFC_CLASS_NOT_COPYABLE_EX(dialog_resize_helper);
 };
 
-#endif
+#endif // FOOBAR2000_DESKTOP_WINDOWS

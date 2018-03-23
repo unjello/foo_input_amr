@@ -1,3 +1,5 @@
+#pragma once
+
 namespace pfc {
 	//! Base class for list nodes. Implemented by list implementers.
 	template<typename t_item> class _list_node : public refcounted_object_root {
@@ -34,6 +36,11 @@ namespace pfc {
 		const_iterator() {}
 		const_iterator(t_node* source) : m_content(source) {}
 		const_iterator(t_nodeptr const & source) : m_content(source) {}
+		const_iterator(t_self const & other) : m_content(other.m_content) {}
+		const_iterator(t_self && other) : m_content(std::move(other.m_content)) {}
+
+		t_self const & operator=(t_self const & other) {m_content = other.m_content; return *this;}
+		t_self const & operator=(t_self && other) {m_content = std::move(other.m_content); return *this;}
 
 		const t_item& operator*() const throw() {return m_content->m_content;}
 		const t_item* operator->() const throw() {return &m_content->m_content;}
@@ -45,10 +52,6 @@ namespace pfc {
 
 		bool operator==(const t_self & other) const throw() {return this->m_content == other.m_content;}
 		bool operator!=(const t_self & other) const throw() {return this->m_content != other.m_content;}
-		bool operator> (const t_self & other) const throw() {return this->m_content >  other.m_content;}
-		bool operator< (const t_self & other) const throw() {return this->m_content <  other.m_content;}
-		bool operator>=(const t_self & other) const throw() {return this->m_content >= other.m_content;}
-		bool operator<=(const t_self & other) const throw() {return this->m_content <= other.m_content;}
 	protected:
 		t_nodeptr m_content;
 	};
@@ -62,6 +65,11 @@ namespace pfc {
 		iterator() {}
 		iterator(t_node* source) : t_selfConst(source) {}
 		iterator(t_nodeptr const & source) : t_selfConst(source) {}
+		iterator(t_self const & other) : t_selfConst(other) {}
+		iterator(t_self && other) : t_selfConst(std::move(other)) {}
+
+		t_self const & operator=(t_self const & other) {this->m_content = other.m_content; return *this;}
+		t_self const & operator=(t_self && other) {this->m_content = std::move(other.m_content); return *this;}
 
 		t_item& operator*() const throw() {return this->m_content->m_content;}
 		t_item* operator->() const throw() {return &this->m_content->m_content;}
@@ -73,17 +81,13 @@ namespace pfc {
 
 		bool operator==(const t_self & other) const throw() {return this->m_content == other.m_content;}
 		bool operator!=(const t_self & other) const throw() {return this->m_content != other.m_content;}
-		bool operator> (const t_self & other) const throw() {return this->m_content >  other.m_content;}
-		bool operator< (const t_self & other) const throw() {return this->m_content <  other.m_content;}
-		bool operator>=(const t_self & other) const throw() {return this->m_content >= other.m_content;}
-		bool operator<=(const t_self & other) const throw() {return this->m_content <= other.m_content;}
 	};
 
 	template<typename t_comparator = comparator_default>
 	class comparator_list {
 	public:
 		template<typename t_list1, typename t_list2>
-		static int compare(const t_list1 & p_list1, const t_list2 p_list2) {
+		static int compare(const t_list1 & p_list1, const t_list2 & p_list2) {
 			typename t_list1::const_iterator iter1 = p_list1.first();
 			typename t_list2::const_iterator iter2 = p_list2.first();
 			for(;;) {
@@ -110,4 +114,26 @@ namespace pfc {
 			++iter1; ++iter2;
 		}
 	}
+
+	template<typename comparator_t = comparator_default>
+	class comparator_stdlist { 
+	public:
+		template<typename t_list1, typename t_list2>
+		static int compare(const t_list1 & p_list1, const t_list2 & p_list2) {
+			auto iter1 = p_list1.begin();
+			auto iter2 = p_list2.begin();
+			for(;;) {
+				const bool end1 = iter1 == p_list1.end();
+				const bool end2 = iter2 == p_list2.end();
+				if ( end1 && end2 ) return 0;
+				else if ( end1 ) return -1;
+				else if ( end2 ) return 1;
+				else {
+					int state = comparator_t::compare(*iter1,*iter2);
+					if (state != 0) return state;
+				}
+				++iter1; ++iter2;
+			}
+		}
+	};
 }

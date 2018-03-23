@@ -1,4 +1,8 @@
+#pragma once
+
+#ifdef FOOBAR2000_DESKTOP_WINDOWS
 #include <shlobj.h>
+#include "../helpers/COM_utils.h"
 
 namespace IDataObjectUtils {
 
@@ -50,10 +54,7 @@ namespace IDataObjectUtils {
 
 	class CDataObjectBase : public IDataObject {
 	public:
-		COM_QI_BEGIN()
-			COM_QI_ENTRY(IUnknown)
-			COM_QI_ENTRY(IDataObject)
-		COM_QI_END()
+		COM_QI_SIMPLE(IDataObject)
 
 		HRESULT STDMETHODCALLTYPE GetData(FORMATETC * formatetc, STGMEDIUM * medium) {
 			return GetData_internal(formatetc,medium,false);
@@ -99,8 +100,8 @@ namespace IDataObjectUtils {
 				if (pFormatetc == NULL || pmedium == NULL) return E_INVALIDARG;
 
 				/*TCHAR buf[256];
-				if (GetClipboardFormatName(pFormatetc->cfFormat,buf,tabsize(buf)) > 0) {
-					buf[tabsize(buf)-1] = 0;
+				if (GetClipboardFormatName(pFormatetc->cfFormat,buf,PFC_TABSIZE(buf)) > 0) {
+					buf[PFC_TABSIZE(buf)-1] = 0;
 					OutputDebugString(TEXT("SetData: ")); OutputDebugString(buf); OutputDebugString(TEXT("\n"));
 				} else {
 					OutputDebugString(TEXT("SetData: unknown clipboard format.\n"));
@@ -151,10 +152,10 @@ namespace IDataObjectUtils {
 
 		virtual void EnumFormats(TFormatList & out) const {
 			pfc::avltree_t<UINT> formats;
-			for(t_entries::const_iterator walk = m_entries.first(); walk.is_valid(); ++walk) {
+			for(auto walk = m_entries.cfirst(); walk.is_valid(); ++walk) {
 				formats.add_item( walk->m_key.cfFormat );
 			}
-			for(pfc::const_iterator<UINT> walk = formats.first(); walk.is_valid(); ++walk) {
+			for(auto walk = formats.cfirst(); walk.is_valid(); ++walk) {
 				AddFormat(out, *walk);
 			}
 		}
@@ -181,3 +182,5 @@ namespace IDataObjectUtils {
 		t_entries m_entries;
 	};
 }
+
+#endif // FOOBAR2000_DESKTOP_WINDOWS

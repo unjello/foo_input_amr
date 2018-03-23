@@ -1,10 +1,12 @@
+#pragma once
+
 #ifdef _WIN32
 namespace pfc {
 
-	static void _COM_AddRef(IUnknown * ptr) {
+	template<typename what> static void _COM_AddRef(what * ptr) {
 		if (ptr != NULL) ptr->AddRef();
 	}
-	static void _COM_Release(IUnknown * ptr) {
+	template<typename what> static void _COM_Release(what * ptr) {
 		if (ptr != NULL) ptr->Release();
 	}
 
@@ -13,9 +15,11 @@ namespace pfc {
 	public:
 		typedef com_ptr_t<T> t_self;
 
-		inline com_ptr_t() throw() : m_ptr() {}
-		template<typename source> inline com_ptr_t(source * p_ptr) throw() : m_ptr(p_ptr) {_COM_AddRef(m_ptr);;}
-		inline com_ptr_t(const t_self & p_source) throw() : m_ptr(p_source.m_ptr) {_COM_AddRef(m_ptr);}
+		com_ptr_t( nullptr_t ) throw() : m_ptr() {}
+
+		com_ptr_t() throw() : m_ptr() {}
+		template<typename source> inline com_ptr_t(source * p_ptr) throw() : m_ptr(p_ptr) {_COM_AddRef(m_ptr);}
+		com_ptr_t(const t_self & p_source) throw() : m_ptr(p_source.m_ptr) {_COM_AddRef(m_ptr);}
 		template<typename source> inline com_ptr_t(const com_ptr_t<source> & p_source) throw() : m_ptr(p_source.get_ptr()) {_COM_AddRef(m_ptr);}
 
 		inline ~com_ptr_t() throw() {_COM_Release(m_ptr);}
@@ -31,7 +35,7 @@ namespace pfc {
 		inline void attach(T * p_ptr) throw() {
 			_COM_Release(m_ptr);
 			m_ptr = p_ptr;
-		}
+		}	
 
 		inline const t_self & operator=(const t_self & p_source) throw() {copy(p_source); return *this;}
 		inline const t_self & operator=(T* p_source) throw() {copy(p_source); return *this;}
@@ -44,7 +48,7 @@ namespace pfc {
 		}
 
 
-		inline T* operator->() const throw() {assert(m_ptr);return m_ptr;}
+		inline T* operator->() const throw() {PFC_ASSERT(m_ptr);return m_ptr;}
 
 		inline T* get_ptr() const throw() {return m_ptr;}
 		
@@ -71,6 +75,7 @@ namespace pfc {
 		}
 
 		inline T** receive_ptr() throw() {release();return &m_ptr;}
+		inline void** receive_void_ptr() throw() {return (void**) receive_ptr();}
 
 		inline t_self & operator<<(t_self & p_source) throw() {attach(p_source.detach());return *this;}
 		inline t_self & operator>>(t_self & p_dest) throw() {p_dest.attach(detach());return *this;}

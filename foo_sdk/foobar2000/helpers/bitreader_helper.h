@@ -1,10 +1,12 @@
+#pragma once
+
 namespace bitreader_helper {
 
 	inline static size_t extract_bit(const t_uint8 * p_stream,size_t p_offset) {
 		return (p_stream[p_offset>>3] >> (7-(p_offset&7)))&1;
 	}
 
-	static size_t extract_int(const t_uint8 * p_stream,size_t p_base,size_t p_width) {
+	inline static size_t extract_int(const t_uint8 * p_stream,size_t p_base,size_t p_width) {
 		size_t ret = 0;
 		size_t offset = p_base;
 		for(size_t bit=0;bit<p_width;bit++) {

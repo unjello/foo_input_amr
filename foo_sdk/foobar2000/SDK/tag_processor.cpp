@@ -37,24 +37,24 @@ static void g_write_tags_ex(tag_write_callback & p_callback,unsigned p_flags,con
 	if (p_flags & (g_flag_id3v1 | g_flag_apev2)) {
 		switch(p_flags & (g_flag_id3v1 | g_flag_apev2)) {
 		case g_flag_id3v1 | g_flag_apev2:
-			static_api_ptr_t<tag_processor_trailing>()->write_apev2_id3v1(p_file,*p_info,p_abort);
+			tag_processor_trailing::get()->write_apev2_id3v1(p_file,*p_info,p_abort);
 			break;
 		case g_flag_id3v1:
-			static_api_ptr_t<tag_processor_trailing>()->write_id3v1(p_file,*p_info,p_abort);
+			tag_processor_trailing::get()->write_id3v1(p_file,*p_info,p_abort);
 			break;
 		case g_flag_apev2:
-			static_api_ptr_t<tag_processor_trailing>()->write_apev2(p_file,*p_info,p_abort);
+			tag_processor_trailing::get()->write_apev2(p_file,*p_info,p_abort);
 			break;
 		default:
 			throw exception_io_data();
 		}
 	} else {
-		static_api_ptr_t<tag_processor_trailing>()->remove(p_file,p_abort);
+		tag_processor_trailing::get()->remove(p_file,p_abort);
 	}
 
 	if (p_flags & g_flag_id3v2)
 	{
-		static_api_ptr_t<tag_processor_id3v2>()->write_ex(p_callback,p_file,*p_info,p_abort);
+		tag_processor_id3v2::get()->write_ex(p_callback,p_file,*p_info,p_abort);
 	}
 	else
 	{
@@ -64,7 +64,8 @@ static void g_write_tags_ex(tag_write_callback & p_callback,unsigned p_flags,con
 }
 
 static void g_write_tags(unsigned p_flags,const service_ptr_t<file> & p_file,const file_info * p_info,abort_callback & p_abort) {
-	g_write_tags_ex(tag_write_callback_dummy(),p_flags,p_file,p_info,p_abort);
+    tag_write_callback_dummy cb;
+	g_write_tags_ex(cb,p_flags,p_file,p_info,p_abort);
 }
 
 
@@ -105,7 +106,7 @@ void tag_processor::write_id3v2_id3v1(const service_ptr_t<file> & p_file,const f
 }
 
 void tag_processor::remove_trailing(const service_ptr_t<file> & p_file,abort_callback & p_abort) {
-	return static_api_ptr_t<tag_processor_trailing>()->remove(p_file,p_abort);
+	return tag_processor_trailing::get()->remove(p_file,p_abort);
 }
 
 bool tag_processor::remove_id3v2(const service_ptr_t<file> & p_file,abort_callback & p_abort) {
@@ -120,38 +121,47 @@ void tag_processor::remove_id3v2_trailing(const service_ptr_t<file> & p_file,abo
 }
 
 void tag_processor::read_trailing(const service_ptr_t<file> & p_file,file_info & p_info,abort_callback & p_abort) {
-	static_api_ptr_t<tag_processor_trailing>()->read(p_file,p_info,p_abort);
+	tag_processor_trailing::get()->read(p_file,p_info,p_abort);
 }
 
 void tag_processor::read_trailing_ex(const service_ptr_t<file> & p_file,file_info & p_info,t_uint64 & p_tagoffset,abort_callback & p_abort) {
-	static_api_ptr_t<tag_processor_trailing>()->read_ex(p_file,p_info,p_tagoffset,p_abort);
+	tag_processor_trailing::get()->read_ex(p_file,p_info,p_tagoffset,p_abort);
 }
 
 void tag_processor::read_id3v2(const service_ptr_t<file> & p_file,file_info & p_info,abort_callback & p_abort) {
-	static_api_ptr_t<tag_processor_id3v2>()->read(p_file,p_info,p_abort);
+	tag_processor_id3v2::get()->read(p_file,p_info,p_abort);
 }
 
 void tag_processor::read_id3v2_trailing(const service_ptr_t<file> & p_file,file_info & p_info,abort_callback & p_abort)
 {
-	file_info_impl temp_infos[2];
+	file_info_impl id3v2, trailing;
 	bool have_id3v2 = true, have_trailing = true;
 	try {
-		read_id3v2(p_file,temp_infos[0],p_abort);
+		read_id3v2(p_file,id3v2,p_abort);
 	} catch(exception_io_data) {
 		have_id3v2 = false;
 	}
-	try {
-		read_trailing(p_file,temp_infos[1],p_abort);
+
+	if (have_id3v2) {
+		// Disregard empty ID3v2
+		if (id3v2.meta_get_count() == 0 && id3v2.get_replaygain().get_value_count() == 0) {
+			have_id3v2 = false;
+		}
+	}
+
+	if (!have_id3v2 || !p_file->is_remote()) try {
+		read_trailing(p_file,trailing,p_abort);
 	} catch(exception_io_data) {
 		have_trailing = false;
 	}
 
 	if (!have_id3v2 && !have_trailing) throw exception_tag_not_found();
-	else  {
-		pfc::ptr_list_t<const file_info> blargh;
-		if (have_id3v2) blargh.add_item(&temp_infos[0]);
-		if (have_trailing) blargh.add_item(&temp_infos[1]);
-		p_info.merge(blargh);
+
+	if (have_id3v2) {
+		p_info._set_tag(id3v2);
+		if (have_trailing) p_info._add_tag(trailing);
+	} else {
+		p_info._set_tag(trailing);
 	}
 }
 
@@ -161,10 +171,10 @@ void tag_processor::skip_id3v2(const service_ptr_t<file> & p_file,t_uint64 & p_s
 
 bool tag_processor::is_id3v1_sufficient(const file_info & p_info)
 {
-	return static_api_ptr_t<tag_processor_trailing>()->is_id3v1_sufficient(p_info);
+	return tag_processor_trailing::get()->is_id3v1_sufficient(p_info);
 }
 
 void tag_processor::truncate_to_id3v1(file_info & p_info)
 {
-	static_api_ptr_t<tag_processor_trailing>()->truncate_to_id3v1(p_info);
+	tag_processor_trailing::get()->truncate_to_id3v1(p_info);
 }

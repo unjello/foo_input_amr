@@ -1,57 +1,76 @@
+#pragma once
+
+#include <functional>
+
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <pthread.h>
+#endif
 namespace pfc {
 	t_size getOptimalWorkerThreadCount();
 	t_size getOptimalWorkerThreadCountEx(t_size taskCountLimit);
 
-#ifdef _WINDOWS
 	//! IMPORTANT: all classes derived from thread must call waitTillDone() in their destructor, to avoid object destruction during a virtual function call!
 	class thread {
 	public:
-		PFC_DECLARE_EXCEPTION(exception_creation, exception, "Could not create thread");
-		thread() : m_thread(INVALID_HANDLE_VALUE) {}
+
+		//! Critical error handler function, never returns
+		PFC_NORETURN static void couldNotCreateThread();
+
+		thread();
 		~thread() {PFC_ASSERT(!isActive()); waitTillDone();}
-		void start() {
-			close();
-			HANDLE thread;
-			const int priority = GetThreadPriority(GetCurrentThread());
-			const bool overridePriority = (priority != THREAD_PRIORITY_NORMAL);
-			thread = CreateThread(NULL,0,g_entry,reinterpret_cast<void*>(this),overridePriority ? CREATE_SUSPENDED : 0,NULL);
-			if (thread == NULL) throw exception_creation();
-			if (overridePriority) {
-				SetThreadPriority(thread, priority);
-				ResumeThread(thread);
-			}
-			m_thread = thread;
-		}
-		bool isActive() const {
-			return m_thread != INVALID_HANDLE_VALUE;
-		}
-		void waitTillDone() {
-			close();
-		}
+		void startWithPriority(int priority);
+		void setPriority(int priority);
+        int getPriority();
+		void start();
+		bool isActive() const;
+		void waitTillDone() {close();}
+        static int currentPriority();
+#ifdef _WIN32
+		void winStart(int priority, DWORD * outThreadID); 
+		HANDLE winThreadHandle() { return m_thread; }
+#else
+		pthread_t posixThreadHandle() { return m_thread; }
+#endif
+#ifdef __APPLE__
+		static void appleStartThreadPrologue();
+#endif
 	protected:
 		virtual void threadProc() {PFC_ASSERT(!"Stub thread entry - should not get here");}
 	private:
-		void close() {
-			if (isActive()) {
-				WaitForSingleObject(m_thread,INFINITE);
-				CloseHandle(m_thread); m_thread = INVALID_HANDLE_VALUE;
-			}
-		}
-
-		static DWORD CALLBACK g_entry(void* p_instance) {
-			return reinterpret_cast<thread*>(p_instance)->entry();
-		}
-		unsigned entry() {
-			try {
-				threadProc();
-			} catch(...) {}
-			return 0;
-		}
+		void close();
+#ifdef _WIN32
+		static unsigned CALLBACK g_entry(void* p_instance);
+#else
+		static void * g_entry( void * arg );
+#endif
+        void entry();
+        
+#ifdef _WIN32
 		HANDLE m_thread;
-
+#else
+        pthread_t m_thread;
+        bool m_threadValid; // there is no invalid pthread_t, so we keep a separate 'valid' flag
+#endif
 		PFC_CLASS_NOT_COPYABLE_EX(thread)
 	};
-#else
-#error PORTME
-#endif
+
+	//! Thread class using lambda entrypoint rather than function override
+	class thread2 : public thread {
+	public:
+		void startHereWithPriority(std::function<void()> e, int priority);
+		void startHere(std::function<void()> e);
+		void setEntry(std::function<void()> e);
+	private:
+		void threadProc();
+
+		std::function<void()> m_entryPoint;
+	};
+
+	void splitThread(std::function<void() > f);
+
+	//! Apple specific; executes the function in a release pool scope. \n
+	//! On non Apple platforms it just invokes the function.
+	void inAutoReleasePool(std::function<void()> f);
 }

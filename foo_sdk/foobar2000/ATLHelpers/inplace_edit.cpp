@@ -1,9 +1,13 @@
 #include "stdafx.h"
 
-#if _WIN32_WINNT < 0x600
+#include "inplace_edit.h"
+#include "AutoComplete.h"
+#include "misc.h"
+#include "WTL-PP.h"
+
+#ifndef WM_MOUSEHWHEEL
 #define WM_MOUSEHWHEEL 0x20E
 #endif
-
 
 using namespace InPlaceEdit;
 
@@ -12,27 +16,43 @@ namespace {
 
 enum {
 	MSG_COMPLETION = WM_USER,
-	MSG_DISABLE_EDITING,
+	MSG_DISABLE_EDITING
 };
 
 
 static pfc::avltree_t<HWND> g_editboxes;
-static HHOOK g_hook = NULL;
+static HHOOK g_hook = NULL /*, g_keyHook = NULL*/;
+
+static void GAbortEditing(HWND edit, t_uint32 code) {
+	CWindow parent = ::GetParent(edit);
+	parent.SendMessage(MSG_DISABLE_EDITING);
+	parent.PostMessage(MSG_COMPLETION, code, 0);
+}
+
+static void GAbortEditing(t_uint32 code) {
+	for(auto walk = g_editboxes.cfirst(); walk.is_valid(); ++walk ) {
+		GAbortEditing(*walk, code);
+	}
+}
+
+static bool IsSamePopup(CWindow wnd1, CWindow wnd2) {
+	return FindOwningPopup(wnd1) == FindOwningPopup(wnd2);
+}
 
 static void MouseEventTest(HWND target, CPoint pt, bool isWheel) {
-	for(pfc::const_iterator<HWND> walk = g_editboxes.first(); walk.is_valid(); ) {
-		pfc::const_iterator<HWND> next = walk; ++next;
+	for(auto walk = g_editboxes.cfirst(); walk.is_valid(); ++walk) {
 		CWindow edit ( *walk );
 		bool cancel = false;
-		if (target != edit) {
-			cancel = true;			
+		if (target != edit && IsSamePopup(target, edit)) {
+			cancel = true;
 		} else if (isWheel) {
-			if (WindowFromPoint(pt) != edit) cancel = true;
+			CWindow target2 = WindowFromPoint(pt);
+			if (target2 != edit && IsSamePopup(target2, edit)) {
+				cancel = true;
+			}
 		}
 
-		if (cancel) edit.GetParent().PostMessage(MSG_COMPLETION, KEditLostFocus, 0);
-		
-		walk = next;
+		if (cancel) GAbortEditing(edit, KEditLostFocus);
 	}
 }
 
@@ -58,52 +78,123 @@ static LRESULT CALLBACK GMouseProc(int nCode,WPARAM wParam,LPARAM lParam) {
 	}
 	return CallNextHookEx(g_hook,nCode,wParam,lParam);
 }
+#if 0
+static LRESULT CALLBACK GKeyboardProc(int code, WPARAM wp, LPARAM lp) {
+	if (code == HC_ACTION && (lp & (1<<31)) == 0) {
+		switch(wp) {
+			case VK_RETURN:
+				if (!IsKeyPressed(VK_LCONTROL) && !IsKeyPressed(VK_RCONTROL)) {
+					GAbortEditing(KEditEnter);
+				}
+				break;
+			case VK_TAB:
+				GAbortEditing(IsKeyPressed(VK_SHIFT) ? KEditShiftTab : KEditTab);
+				break;
+			case VK_ESCAPE:
+				GAbortEditing(KEditAborted);
+				break;
+		}
+	}
+	return CallNextHookEx(g_keyHook,code,wp,lp);
+}
+#endif
 
-void on_editbox_creation(HWND p_editbox) {
+static void on_editbox_creation(HWND p_editbox) {
 	PFC_ASSERT( core_api::is_main_thread() );
 	g_editboxes.add(p_editbox);
 	if (g_hook == NULL) {
 		g_hook = SetWindowsHookEx(WH_MOUSE,GMouseProc,NULL,GetCurrentThreadId());
 	}
+	/*if (g_keyHook == NULL) {
+		g_keyHook = SetWindowsHookEx(WH_KEYBOARD, GKeyboardProc, NULL, GetCurrentThreadId());
+	}*/
 }
-void on_editbox_destruction(HWND p_editbox) {
+static void UnhookHelper(HHOOK & hook) {
+	HHOOK v = pfc::replace_null_t(hook);
+	if (v != NULL) UnhookWindowsHookEx(v);
+}
+static void on_editbox_destruction(HWND p_editbox) {
 	PFC_ASSERT( core_api::is_main_thread() );
 	g_editboxes.remove_item(p_editbox);
-	if (g_editboxes.get_count() == 0 && g_hook != NULL) {
-		UnhookWindowsHookEx(pfc::replace_null_t(g_hook));
+	if (g_editboxes.get_count() == 0) {
+		UnhookHelper(g_hook); /*UnhookHelper(g_keyHook);*/
 	}
 }
 
 class CInPlaceEditBox : public CContainedWindowSimpleT<CEdit> {
 public:
-	CInPlaceEditBox() : m_selfDestruct() {}
+	CInPlaceEditBox() : m_selfDestruct(), m_suppressChar() {}
 	BEGIN_MSG_MAP_EX(CInPlaceEditBox)
-		MSG_WM_CREATE(OnCreate)
+		//MSG_WM_CREATE(OnCreate)
 		MSG_WM_DESTROY(OnDestroy)
 		MSG_WM_GETDLGCODE(OnGetDlgCode)
 		MSG_WM_KILLFOCUS(OnKillFocus)
 		MSG_WM_CHAR(OnChar)
+		MSG_WM_KEYDOWN(OnKeyDown)
 	END_MSG_MAP()
+	void OnCreation() {
+		m_typableScope.Set(m_hWnd);
+		on_editbox_creation(m_hWnd);
+	}
 private:
 	void OnDestroy() {
 		m_selfDestruct = true;
+		m_typableScope.Set(NULL);
 		on_editbox_destruction(m_hWnd);
 		SetMsgHandled(FALSE);
 	}
 	int OnCreate(LPCREATESTRUCT lpCreateStruct) {
-		on_editbox_creation(m_hWnd);
+		OnCreation();
 		SetMsgHandled(FALSE);
 		return 0;
 	}
 	UINT OnGetDlgCode(LPMSG lpMsg) {
-		return DLGC_WANTALLKEYS;
+		if (lpMsg == NULL) {
+			return DLGC_WANTALLKEYS;
+		} else {
+			switch(lpMsg->message) {
+			case WM_KEYDOWN:
+			case WM_SYSKEYDOWN:
+				switch(lpMsg->wParam) {
+				case VK_TAB:
+				case VK_ESCAPE:
+				case VK_RETURN:
+					return DLGC_WANTALLKEYS;
+				default:
+					SetMsgHandled(FALSE); return 0;
+				}
+			default:
+				SetMsgHandled(FALSE); return 0;
+
+			}
+		}
 	}
 	void OnKillFocus(CWindow wndFocus) {
 		ForwardCompletion(KEditLostFocus);
 		SetMsgHandled(FALSE);
 	}
+
 	void OnChar(UINT nChar, UINT nRepCnt, UINT nFlags) {
+		if (m_suppressChar != 0) {
+			UINT code = nFlags & 0xFF;
+			if (code == m_suppressChar) return;
+		}
+		SetMsgHandled(FALSE);
+	}
+	void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags) {
+		m_suppressChar = nFlags & 0xFF;
 		switch(nChar) {
+			case VK_BACK:
+				if (GetHotkeyModifierFlags() == MOD_CONTROL) {
+					CEditPPHooks::DeleteLastWord( * this );
+					return;
+				}
+				break;
+			case 'A':
+				if (GetHotkeyModifierFlags() == MOD_CONTROL) {
+					this->SetSelAll(); return;
+				}
+				break;
 			case VK_RETURN:
 				if (!IsKeyPressed(VK_LCONTROL) && !IsKeyPressed(VK_RCONTROL)) {
 					ForwardCompletion(KEditEnter);
@@ -117,17 +208,22 @@ private:
 				ForwardCompletion(KEditAborted);
 				return;
 		}
+		m_suppressChar = 0;
 		SetMsgHandled(FALSE);
 	}
 
 	void ForwardCompletion(t_uint32 code) {
-		CWindow owner = GetParent();
-		owner.SendMessage(MSG_DISABLE_EDITING,0,0);
-		owner.PostMessage(MSG_COMPLETION,code,0);
-		EnableWindow(FALSE);
+		if (IsWindowEnabled()) {
+			CWindow owner = GetParent();
+			owner.SendMessage(MSG_DISABLE_EDITING);
+			owner.PostMessage(MSG_COMPLETION,code,0);
+			EnableWindow(FALSE);
+		}
 	}
 	
+	CTypableWindowScope m_typableScope;
 	bool m_selfDestruct;
+	UINT m_suppressChar;
 };
 
 class InPlaceEditContainer : public CWindowImpl<InPlaceEditContainer> {
@@ -164,9 +260,14 @@ public:
 			else style |= ES_LEFT;
 
 
+			CEdit edit;
 
-			WIN32_OP( m_edit.Create(*this, rcClient, NULL, style, 0, ID_MYEDIT) != NULL );
-			m_edit.SetFont(parent.GetFont());
+			WIN32_OP( edit.Create(*this, rcClient, NULL, style, 0, ID_MYEDIT) != NULL );
+			edit.SetFont(parent.GetFont());
+
+			if (m_ACData.is_valid()) InitializeSimpleAC(edit, m_ACData.get_ptr(), m_ACOpts);
+			m_edit.SubclassWindow(edit);
+			m_edit.OnCreation();
 
 			uSetWindowText(m_edit,*m_content);
 			m_edit.SetSelAll();
@@ -175,14 +276,6 @@ public:
 			return m_hWnd;
 		}
 
-/*		try {
-			new InPlaceEditHook(edit);
-		} catch(...) {
-			PostMessage(MSG_COMPLETION,InPlaceEdit::KEditAborted,0);
-			return m_hWnd;
-		}
-*/
-		//SetWindowPos(container,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);
 		ShowWindow(SW_SHOW);
 		m_edit.SetFocus();
 
@@ -193,8 +286,8 @@ public:
 		return m_hWnd;
 	}
 
-	InPlaceEditContainer(const RECT & p_rect,t_uint32 p_flags,pfc::rcptr_t<pfc::string_base> p_content,completion_notify_ptr p_notify) 
-		: m_content(p_content), m_notify(p_notify), m_completed(false), m_initialized(false), m_changed(false), m_disable_editing(false), m_initRect(p_rect), m_flags(p_flags), m_selfDestruct()
+	InPlaceEditContainer(const RECT & p_rect,t_uint32 p_flags,pfc::rcptr_t<pfc::string_base> p_content,completion_notify_ptr p_notify, IUnknown * ACData, DWORD ACOpts) 
+		: m_content(p_content), m_notify(p_notify), m_completed(false), m_initialized(false), m_changed(false), m_disable_editing(false), m_initRect(p_rect), m_flags(p_flags), m_selfDestruct(), m_ACData(ACData), m_ACOpts(ACOpts)
 	{
 	}
 
@@ -210,6 +303,8 @@ public:
 		COMMAND_HANDLER_EX(ID_MYEDIT, EN_CHANGE, OnEditChange)
 		MSG_WM_DESTROY(OnDestroy)
 	END_MSG_MAP()
+
+	HWND GetEditBox() const {return m_edit;}
 
 private:
 	void OnDestroy() {m_selfDestruct = true;}
@@ -266,6 +361,9 @@ private:
 	const CRect m_initRect;
 	const t_uint32 m_flags;
 	CInPlaceEditBox m_edit;
+
+	const pfc::com_ptr_t<IUnknown> m_ACData;
+	const DWORD m_ACOpts;
 };
 
 }
@@ -274,8 +372,8 @@ static void fail(completion_notify_ptr p_notify) {
 	completion_notify::g_signal_completion_async(p_notify,KEditAborted);
 }
 
-void InPlaceEdit::Start(HWND p_parentwnd,const RECT & p_rect,bool p_multiline,pfc::rcptr_t<pfc::string_base> p_content,completion_notify_ptr p_notify) {
-	StartEx(p_parentwnd,p_rect,p_multiline ? KFlagMultiLine : 0, p_content,p_notify);
+HWND InPlaceEdit::Start(HWND p_parentwnd,const RECT & p_rect,bool p_multiline,pfc::rcptr_t<pfc::string_base> p_content,completion_notify_ptr p_notify) {
+	return StartEx(p_parentwnd,p_rect,p_multiline ? KFlagMultiLine : 0, p_content,p_notify);
 }
 
 void InPlaceEdit::Start_FromListView(HWND p_listview,unsigned p_item,unsigned p_subitem,unsigned p_linecount,pfc::rcptr_t<pfc::string_base> p_content,completion_notify_ptr p_notify) {
@@ -351,12 +449,13 @@ bool InPlaceEdit::TableEditAdvance(unsigned & p_item,unsigned & p_column, unsign
 	return true;
 }
 
-void InPlaceEdit::StartEx(HWND p_parentwnd,const RECT & p_rect,unsigned p_flags,pfc::rcptr_t<pfc::string_base> p_content,completion_notify_ptr p_notify) {
+HWND InPlaceEdit::StartEx(HWND p_parentwnd,const RECT & p_rect,unsigned p_flags,pfc::rcptr_t<pfc::string_base> p_content,completion_notify_ptr p_notify, IUnknown * ACData , DWORD ACOpts) {
 	try {
 		PFC_ASSERT( (CWindow(p_parentwnd).GetWindowLong(GWL_STYLE) & WS_CLIPCHILDREN) != 0 );
-		new CWindowAutoLifetime<InPlaceEditContainer>(p_parentwnd,p_rect,p_flags,p_content,p_notify);
+		return (new CWindowAutoLifetime<InPlaceEditContainer>(p_parentwnd,p_rect,p_flags,p_content,p_notify, ACData, ACOpts))->GetEditBox();
 	} catch(...) {
 		fail(p_notify);
+		return NULL;
 	}
 }
 

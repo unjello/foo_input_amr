@@ -32,7 +32,7 @@ class config_object_impl : public config_object, private cfg_var
 {
 public:
 	GUID get_guid() const {return cfg_var::get_guid();}
-	void get_data(stream_writer * p_stream,abort_callback & p_abort) const ;
+	void get_data(stream_writer * p_stream,abort_callback & p_abort) const;
 	void set_data(stream_reader * p_stream,abort_callback & p_abort,bool p_notify);
 
 	config_object_impl(const GUID & p_guid,const void * p_data,t_size p_bytes);
@@ -42,7 +42,7 @@ private:
 	void get_data_raw(stream_writer * p_stream,abort_callback & p_abort) {get_data(p_stream,p_abort);}
 	void set_data_raw(stream_reader * p_stream,t_size p_sizehint,abort_callback & p_abort) {set_data(p_stream,p_abort,false);}
 
-	mutable critical_section m_sync;
+	mutable pfc::readWriteLock m_sync;
 	pfc::array_t<t_uint8> m_data;	
 };
 
@@ -68,7 +68,7 @@ public:
 	GUID get_guid() const {return cfg_var::get_guid();}
 	
 	void get_data(stream_writer * p_stream,abort_callback & p_abort) const {
-		insync(m_sync);
+		inReadSync(m_sync);
 		p_stream->write_object(m_data,p_size,p_abort);
 	}
 
@@ -78,7 +78,7 @@ public:
 		{
 			t_uint8 temp[p_size];
 			p_stream->read_object(temp,p_size,p_abort);
-			insync(m_sync);
+			inWriteSync(m_sync);
 			memcpy(m_data,temp,p_size);
 		}
 
@@ -96,7 +96,7 @@ private:
 	void get_data_raw(stream_writer * p_stream,abort_callback & p_abort) {get_data(p_stream,p_abort);}
 	void set_data_raw(stream_reader * p_stream,t_size p_sizehint,abort_callback & p_abort) {set_data(p_stream,p_abort,false);}
 
-	mutable critical_section m_sync;
+	mutable pfc::readWriteLock m_sync;
 	t_uint8 m_data[p_size];
 	
 };
@@ -120,8 +120,8 @@ public:
 class config_object_string_factory : public config_object_factory
 {
 public:
-	config_object_string_factory(const GUID & p_guid,const char * p_string,t_size p_string_length = infinite)
-		: config_object_factory(p_guid,p_string,pfc::strlen_max(p_string,infinite)) {}
+	config_object_string_factory(const GUID & p_guid,const char * p_string,t_size p_string_length = ~0)
+		: config_object_factory(p_guid,p_string,pfc::strlen_max(p_string,~0)) {}
 
 };
 
@@ -137,7 +137,6 @@ template<class T,bool isConst = false>
 class config_object_int_factory_t : public config_object_fixed_factory_t<sizeof(T),isConst>
 {
 private:
-	template<class T>
 	struct t_initval
 	{
 		T m_initval;
@@ -146,7 +145,7 @@ private:
 	};
 public:
 	config_object_int_factory_t(const GUID & p_guid,T p_initval)
-		: config_object_fixed_factory_t<sizeof(T)>(p_guid,t_initval<T>(p_initval).get_ptr() )
+		: config_object_fixed_factory_t<sizeof(T)>(p_guid,t_initval(p_initval).get_ptr() )
 	{}
 };
 
@@ -171,4 +170,4 @@ private:
 
 typedef service_factory_single_transparent_t<config_object_notify_impl_simple> config_object_notify_simple_factory;
 
-#endif _CONFIG_OBJECT_IMPL_H_
+#endif //_CONFIG_OBJECT_IMPL_H_

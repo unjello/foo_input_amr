@@ -34,7 +34,7 @@ public:
 	static bool is_typing_message(HWND editbox, const MSG * msg);
 	static bool is_typing_message(const MSG * msg);
 
-	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(keyboard_shortcut_manager);
+	FB2K_MAKE_SERVICE_COREAPI(keyboard_shortcut_manager);
 };
 
 
@@ -47,7 +47,7 @@ public:
 	//! Helper for use with message filters.
 	bool pretranslate_message(const MSG * msg, HWND thisPopupWnd);
 
-	FB2K_MAKE_SERVICE_INTERFACE(keyboard_shortcut_manager_v2,keyboard_shortcut_manager);
+	FB2K_MAKE_SERVICE_COREAPI_EXTENSION(keyboard_shortcut_manager_v2,keyboard_shortcut_manager);
 };
 
 class NOVTABLE contextmenu_node {
@@ -74,22 +74,33 @@ class NOVTABLE contextmenu_manager : public service_base
 public:
 	enum
 	{
+		flag_show_shortcuts = 1 << 0,
+		flag_show_shortcuts_global = 1 << 1,
+		//! \since 1.0
+		//! To control which commands are shown, you should specify either flag_view_reduced or flag_view_full. If neither is specified, the implementation will decide automatically based on shift key being pressed, for backwards compatibility.
+		flag_view_reduced = 1 << 2,
+		//! \since 1.0
+		//! To control which commands are shown, you should specify either flag_view_reduced or flag_view_full. If neither is specified, the implementation will decide automatically based on shift key being pressed, for backwards compatibility.
+		flag_view_full = 1 << 3,
+
+		//for compatibility
 		FLAG_SHOW_SHORTCUTS = 1,
 		FLAG_SHOW_SHORTCUTS_GLOBAL = 2,
 	};
-	virtual void init_context(const pfc::list_base_const_t<metadb_handle_ptr> & data,unsigned flags)=0;//flags - see FLAG_* above
-	virtual void init_context_playlist(unsigned flags)=0;
-	virtual contextmenu_node * get_root()=0;//releasing contextmenu_manager service releaases nodes; root may be null in case of error or something
+
+	virtual void init_context(metadb_handle_list_cref data,unsigned flags) = 0;
+	virtual void init_context_playlist(unsigned flags) = 0;
+	virtual contextmenu_node * get_root() = 0;//releasing contextmenu_manager service releaases nodes; root may be null in case of error or something
 	virtual contextmenu_node * find_by_id(unsigned id)=0;
 	virtual void set_shortcut_preference(const keyboard_shortcut_manager::shortcut_type * data,unsigned count)=0;
 	
 
 
-	static void g_create(service_ptr_t<contextmenu_manager> & p_out) {p_out = standard_api_create_t<contextmenu_manager>();}
+	static void g_create(service_ptr_t<contextmenu_manager> & p_out) {standard_api_create_t(p_out);}
 
 #ifdef WIN32
 	static void win32_build_menu(HMENU menu,contextmenu_node * parent,int base_id,int max_id);//menu item identifiers are base_id<=N<base_id+max_id (if theres too many items, they will be clipped)
-	static void win32_run_menu_context(HWND parent,const pfc::list_base_const_t<metadb_handle_ptr> & data, const POINT * pt = 0,unsigned flags = 0);
+	static void win32_run_menu_context(HWND parent,metadb_handle_list_cref data, const POINT * pt = 0,unsigned flags = 0);
 	static void win32_run_menu_context_playlist(HWND parent,const POINT * pt = 0,unsigned flags = 0);
 	void win32_run_menu_popup(HWND parent,const POINT * pt = 0);
 	void win32_build_menu(HMENU menu,int base_id,int max_id) {win32_build_menu(menu,get_root(),base_id,max_id);}
@@ -97,7 +108,7 @@ public:
 	
 #endif
 
-	virtual void init_context_ex(const pfc::list_base_const_t<metadb_handle_ptr> & data,unsigned flags,const GUID & caller)=0;
+	virtual void init_context_ex(metadb_handle_list_cref data,unsigned flags,const GUID & caller)=0;
 	virtual bool init_context_now_playing(unsigned flags)=0;//returns false if not playing
 
 	bool execute_by_id(unsigned id);
@@ -105,5 +116,13 @@ public:
 	bool get_description_by_id(unsigned id,pfc::string_base & out);
 
 
-	FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(contextmenu_manager);
+	FB2K_MAKE_SERVICE_COREAPI(contextmenu_manager);
+};
+
+//! \since 1.0
+class NOVTABLE contextmenu_group_manager : public service_base {
+	FB2K_MAKE_SERVICE_COREAPI(contextmenu_group_manager)
+public:
+	virtual GUID path_to_group(const char * path) = 0;
+	virtual void group_to_path(const GUID & group, pfc::string_base & path) = 0;
 };

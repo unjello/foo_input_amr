@@ -1,3 +1,7 @@
+#pragma once
+
+#include "../helpers/win32_misc.h"
+
 static BOOL AdjustWindowRectHelper(CWindow wnd, CRect & rc) {
 	const DWORD style = wnd.GetWindowLong(GWL_STYLE), exstyle = wnd.GetWindowLong(GWL_EXSTYLE);
 	return AdjustWindowRectEx(&rc,style,(style & WS_POPUP) ? wnd.GetMenu() != NULL : FALSE, exstyle);
@@ -52,7 +56,7 @@ static BOOL ShowWindowCentered(CWindow wnd,CWindow wndParent) {
 
 class cfgWindowSize : public cfg_var {
 public:
-	cfgWindowSize(const GUID & p_guid) : cfg_var(p_guid), m_width(infinite), m_height(infinite) {}
+	cfgWindowSize(const GUID & p_guid) : cfg_var(p_guid), m_width(~0), m_height(~0) {}
 	void get_data_raw(stream_writer * p_stream,abort_callback & p_abort) {
 		stream_writer_formatter<>(*p_stream,p_abort) << m_width << m_height;
 	}
@@ -70,7 +74,7 @@ public:
 	bool Apply(HWND p_wnd) {
 		bool retVal = false;
 		m_applied = false;
-		if (m_var.m_width != infinite && m_var.m_height != infinite) {
+		if (m_var.m_width != ~0 && m_var.m_height != ~0) {
 			CRect rect (0,0,m_var.m_width,m_var.m_height);
 			if (AdjustWindowRectHelper(p_wnd, rect)) {
 				SetWindowPos(p_wnd,NULL,0,0,rect.right-rect.left,rect.bottom-rect.top,SWP_NOMOVE|SWP_NOACTIVATE|SWP_NOZORDER);
@@ -145,7 +149,6 @@ private:
 			if (GetParentWndRect(wndParent, rcParent)) {
 				if (m_posX != posInvalid && m_posY != posInvalid) {
 					rc.MoveToXY( rcParent.TopLeft() + CPoint(m_posX, m_posY) );
-					DeOverlap(wnd, rc);
 				} else {
 					CPoint center = rcParent.CenterPoint();
 					rc.MoveToXY( center.x - rc.Width() / 2, center.y - rc.Height() / 2);
@@ -153,6 +156,8 @@ private:
 			}
 		}
 		if (!AdjustWindowRectHelper(wnd, rc)) return FALSE;
+
+		DeOverlap(wnd, rc);
 
 		{
 			CRect rcAdjust(0,0,1,1);
@@ -166,15 +171,36 @@ private:
 		
 		return wnd.SetWindowPos(NULL, rc, flags);
 	}
-	void DeOverlap(CWindow wnd, CRect & rc) const {
-		const int delta = pfc::max_t<int>(GetSystemMetrics(SM_CYCAPTION),1);
+	struct DeOverlapState {
+		CWindow m_thisWnd;
+		CPoint m_topLeft;
+		bool m_match;
+	};
+	static BOOL CALLBACK MyEnumChildProc(HWND wnd, LPARAM param) {
+		DeOverlapState * state = reinterpret_cast<DeOverlapState*>(param);
+		if (wnd != state->m_thisWnd && IsWindowVisible(wnd) ) {
+			CRect rc;
+			if (GetWindowRect(wnd, rc)) {
+				if (rc.TopLeft() == state->m_topLeft) {
+					state->m_match = true; return FALSE;
+				}
+			}
+		}
+		return TRUE;
+	}
+	static bool DeOverlapTest(CWindow wnd, CPoint topLeft) {
+		DeOverlapState state = {};
+		state.m_thisWnd = wnd; state.m_topLeft = topLeft; state.m_match = false;
+		EnumThreadWindows(GetCurrentThreadId(), MyEnumChildProc, reinterpret_cast<LPARAM>(&state));
+		return state.m_match;
+	}
+	static int DeOverlapDelta() {
+		return pfc::max_t<int>(GetSystemMetrics(SM_CYCAPTION),1);
+	}
+	static void DeOverlap(CWindow wnd, CRect & rc) {
+		const int delta = DeOverlapDelta();
 		for(;;) {
-			CWindow overlap = WindowFromPoint(rc.TopLeft());
-			if (overlap != NULL) overlap = FindOwningPopup(overlap);
-			if (overlap == wnd || overlap == NULL) break;
-			CRect rcTest;
-			if (!GetClientRectAsSC(overlap,rcTest)) break;
-			if (rcTest.TopLeft() != rc.TopLeft()) break;
+			if (!DeOverlapTest(wnd, rc.TopLeft())) break;
 			rc.OffsetRect(delta,delta);
 		}
 	}
@@ -196,7 +222,7 @@ private:
 		return TRUE;
 	}
 	void TryFetchConfig() {
-		for(pfc::const_iterator<CWindow> walk = m_windows.first(); walk.is_valid(); ++walk) {
+		for(auto walk = m_windows.cfirst(); walk.is_valid(); ++walk) {
 			if (StoreConfig(*walk)) break;
 		}
 	}
@@ -264,8 +290,8 @@ FB2K_STREAM_WRITER_OVERLOAD(cfgDialogPositionData) {
 class cfgDialogPosition : public cfgDialogPositionData, public cfg_var {
 public:
 	cfgDialogPosition(const GUID & id) : cfg_var(id) {}
-	void get_data_raw(stream_writer * p_stream,abort_callback & p_abort) {FetchConfig(); stream_writer_formatter<>(*p_stream, p_abort) << *pfc::safe_cast<cfgDialogPositionData*>(this);}
-	void set_data_raw(stream_reader * p_stream,t_size p_sizehint,abort_callback & p_abort) {stream_reader_formatter<>(*p_stream, p_abort) >> *pfc::safe_cast<cfgDialogPositionData*>(this);}
+	void get_data_raw(stream_writer * p_stream,abort_callback & p_abort) {FetchConfig(); stream_writer_formatter<>(*p_stream, p_abort) << *pfc::implicit_cast<cfgDialogPositionData*>(this);}
+	void set_data_raw(stream_reader * p_stream,t_size p_sizehint,abort_callback & p_abort) {stream_reader_formatter<>(*p_stream, p_abort) >> *pfc::implicit_cast<cfgDialogPositionData*>(this);}
 };
 
 class cfgDialogPositionTracker {
