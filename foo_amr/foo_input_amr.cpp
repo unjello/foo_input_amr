@@ -46,7 +46,7 @@ enum {
  * @version 1.1.1
  * @since   1.1.0
  */
-class input_amr {
+class input_amr : public input_stubs {
 protected:
 	/**
 	 * Checks if loaded file is valid AMR audio record. The check is done based on magic string in header.
@@ -106,6 +106,15 @@ protected:
 
 
 public:
+	static const char * g_get_name() { return "foo_input_amr amr decoder"; }
+
+	static const GUID g_get_guid() {
+		static const GUID foo_input_amr_GUID =
+		{ 0x9160f16c, 0x62ce, 0x487c,{ 0xa3, 0x7a, 0xaf, 0x53, 0x73, 0x37, 0xf3, 0xe2 } };
+
+		return foo_input_amr_GUID;
+	}
+
 	/**
 	 * API function called by foobar to open a file. It's called on get info or playback start. It's safest place
 	 * to place total_frame_count extraction code.
@@ -300,7 +309,7 @@ const unsigned input_amr::m_start = 7;
  * @{
  */
 static input_singletrack_factory_t<input_amr> g_input_amr_factory;
-DECLARE_COMPONENT_VERSION("AMR input","1.1.1","http://angelo.scene.pl/\n(c) 2003-2009, Andrzej Lichnerowicz\nPowered GSM AMR-NB speech codec\n(c) 2001, 3gpp");
+DECLARE_COMPONENT_VERSION("AMR input","1.1.1","http://angelo.scene.pl/\n(c) 2003-2018, Andrzej Lichnerowicz\nPowered GSM AMR-NB speech codec\n(c) 2001, 3gpp");
 DECLARE_FILE_TYPE("Adaptive Multirate files","*.AMR");
 /**
  * @}
