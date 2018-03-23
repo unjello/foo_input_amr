@@ -27,8 +27,8 @@ LANGUAGE LANG_POLISH, SUBLANG_DEFAULT
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,1,1,1
- PRODUCTVERSION 1,1,1,1
+ FILEVERSION 1,1,1,2
+ PRODUCTVERSION 1,1,1,2
  FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -45,12 +45,12 @@ BEGIN
         BEGIN
             VALUE "Comments", "powered by AMR codec (c) 3gpp"
             VALUE "FileDescription", "Adaptive Multirate decoder for foobar2000"
-            VALUE "FileVersion", "1, 1, 1, 1"
+            VALUE "FileVersion", "1, 1, 1, 2"
             VALUE "InternalName", "foo_input_amr"
-            VALUE "LegalCopyright", "Copyright (C) 2003-2009 Andrzej Lichnerowicz"
+            VALUE "LegalCopyright", "https://github.com/unjello/foo_input_amr/; 2003-2018: Andrzej Lichnerowicz, Quang Nguyen"
             VALUE "OriginalFilename", "foo_input_amr.dll"
             VALUE "ProductName", "Adaptive Multirate decoder for foobar2000"
-            VALUE "ProductVersion", "1, 1, 1, 1"
+            VALUE "ProductVersion", "1, 1, 1, 2"
         END
     END
     BLOCK "VarFileInfo"
