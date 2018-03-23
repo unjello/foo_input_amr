@@ -309,7 +309,7 @@ const unsigned input_amr::m_start = 7;
  * @{
  */
 static input_singletrack_factory_t<input_amr> g_input_amr_factory;
-DECLARE_COMPONENT_VERSION("AMR input","1.1.2","https://github.com/unjello/foo_input_amr/; 2003-2018: Andrzej Lichnerowicz, Quang Nguyen\nPowered GSM AMR-NB speech codec\n2001, 3gpp");
+DECLARE_COMPONENT_VERSION("AMR input","1.1.2","https://github.com/unjello/foo_input_amr/; 2003-2018: Andrzej Lichnerowicz, Quang Nguyen\nPowered GSM AMR-NB speech codec\n(c) 2001, 3gpp");
 DECLARE_FILE_TYPE("Adaptive Multirate files","*.AMR");
 /**
  * @}
