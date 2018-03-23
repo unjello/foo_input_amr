@@ -1,5 +1,4 @@
-#ifndef _PFC_OTHER_H_
-#define _PFC_OTHER_H_
+#pragma once
 
 namespace pfc {
 	template<class T>
@@ -150,7 +149,15 @@ namespace pfc {
 		T* m_ptr;
 	};
 
-	void crash();
+	PFC_NORETURN void crash();
+	void outputDebugLine(const char * msg);
+
+	class debugLog : public string_formatter {
+	public:
+		~debugLog() { outputDebugLine(this->get_ptr()); }
+	};
+#define PFC_DEBUGLOG ::pfc::debugLog()._formatter()
+	
 
 	template<typename t_type,t_type p_initval>
 	class int_container_helper {
@@ -202,6 +209,67 @@ namespace pfc {
 
 	template<typename TClass>
 	typename instanceTrackerV2<TClass>::t_instanceList instanceTrackerV2<TClass>::g_list;
-}
 
-#endif
+
+	struct objDestructNotifyData {
+		bool m_flag;
+		objDestructNotifyData * m_next;
+
+	};
+	class objDestructNotify {
+	public:
+		objDestructNotify() : m_data() {}
+		~objDestructNotify() {
+			set();
+		}
+		
+		void set() {
+			objDestructNotifyData * w = m_data;
+			while(w) {
+				w->m_flag = true; w = w->m_next;
+			}
+		}
+		objDestructNotifyData * m_data;
+	};
+
+	class objDestructNotifyScope : private objDestructNotifyData {
+	public:
+		objDestructNotifyScope(objDestructNotify &obj) : m_obj(&obj) {
+			m_next = m_obj->m_data;
+			m_obj->m_data = this;
+		}
+		~objDestructNotifyScope() {
+			if (!m_flag) m_obj->m_data = m_next;
+		}
+		bool get() const {return m_flag;}
+		PFC_CLASS_NOT_COPYABLE_EX(objDestructNotifyScope)
+	private:
+		objDestructNotify * m_obj;
+
+	};
+
+
+	class bigmem {
+	public:
+		enum {slice = 1024*1024};
+		bigmem() : m_size() {}
+		~bigmem() {clear();}
+		
+		void resize(size_t newSize);
+		size_t size() const {return m_size;}
+		void clear();
+		void read(void * ptrOut, size_t bytes, size_t offset);
+		void write(const void * ptrIn, size_t bytes, size_t offset);
+		uint8_t * _slicePtr(size_t which);
+		size_t _sliceCount();
+		size_t _sliceSize(size_t which);
+	private:
+		array_t<uint8_t*> m_data;
+		size_t m_size;
+		
+		PFC_CLASS_NOT_COPYABLE_EX(bigmem)
+	};
+
+    
+    double exp_int( double base, int exp );
+}

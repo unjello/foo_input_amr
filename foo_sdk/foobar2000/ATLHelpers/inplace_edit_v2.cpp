@@ -1,5 +1,11 @@
 #include "stdafx.h"
 
+#include "../helpers/win32_misc.h"
+#include "inplace_edit.h"
+#include "inplace_edit_v2.h"
+#include "AutoComplete.h"
+
+
 namespace InPlaceEdit {
 
 	t_size CTableEditHelperV2::ColumnToPosition(t_size col) const {
@@ -83,8 +89,10 @@ namespace InPlaceEdit {
 			rc.bottom = rc.top + (rc.bottom - rc.top) * lineCount;
 			m_editFlags |= KFlagMultiLine;
 		}
+		pfc::com_ptr_t<IUnknown> acl;
+		if (!TableEdit_GetAutoComplete(m_editItem, m_editSubItem, acl)) acl.release();
 
-		InPlaceEdit::StartEx(TableEdit_GetParentWnd(), rc, m_editFlags, m_editData, create_task(KTaskID));
+		InPlaceEdit::StartEx(TableEdit_GetParentWnd(), rc, m_editFlags, m_editData, create_task(KTaskID), acl.get_ptr(), ACO_AUTOSUGGEST);
 	}
 
 	void CTableEditHelperV2::on_task_completion(unsigned id, unsigned status) {

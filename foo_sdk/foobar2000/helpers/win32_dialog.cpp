@@ -1,5 +1,9 @@
 #include "stdafx.h"
 
+#ifdef FOOBAR2000_DESKTOP_WINDOWS
+
+#include "win32_misc.h"
+#include "win32_dialog.h"
 
 namespace dialog_helper {
 
@@ -286,3 +290,5 @@ int uDialogBox(UINT id,HWND parent,DLGPROC proc,LPARAM param)
 {
 	return (int)DialogBoxParam(core_api::get_my_instance(),MAKEINTRESOURCE(id),parent,proc,param);
 }
+
+#endif // FOOBAR2000_DESKTOP_WINDOWS

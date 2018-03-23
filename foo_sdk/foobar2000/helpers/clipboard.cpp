@@ -1,5 +1,8 @@
 #include "stdafx.h"
 
+#ifdef FOOBAR2000_DESKTOP_WINDOWS
+#include "clipboard.h"
+
 #ifdef UNICODE
 #define CF_TCHAR CF_UNICODETEXT
 #else
@@ -35,3 +38,5 @@ namespace ClipboardHelper {
 		return IsClipboardFormatAvailable(CF_TCHAR) == TRUE;
 	}
 }
+
+#endif // FOOBAR2000_DESKTOP_WINDOWS

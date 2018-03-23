@@ -1,3 +1,5 @@
+#pragma once
+
 namespace pfc {
 	PFC_DECLARE_EXCEPTION( exception_invalid_permutation, exception_invalid_params, "Invalid permutation" );
 	t_size permutation_find_reverse(t_size const * order, t_size count, t_size value);
@@ -8,7 +10,9 @@ namespace pfc {
 	void permutation_validate(t_size const * order, t_size count);
 
 	//! Creates a permutation that moves selected items in a list box by the specified delta-offset.
-	void create_move_items_permutation(t_size * p_output,t_size p_count,const class ::bit_array & p_selection,int p_delta);
+	void create_move_items_permutation(t_size * p_output,t_size p_count,const class bit_array & p_selection,int p_delta);
+    
+    void create_move_item_permutation( size_t * p_output, size_t p_count, size_t from, size_t to );
 }
 
 class order_helper
@@ -22,6 +26,17 @@ public:
 
 	order_helper(const order_helper & p_order) {*this = p_order;}
 
+	static bool g_is_identity(const t_size * order, t_size count) {
+		for(t_size walk = 0; walk < count; ++walk) {
+			if (order[walk] != walk) return false;
+		}
+		return true;
+	}
+	template<typename t_array> static bool g_is_identity(const t_array & p_array) {
+		const t_size count = pfc::array_size_t(p_array);
+		for(t_size walk = 0; walk < count; ++walk) if (p_array[walk] != walk) return false;
+		return true;
+	}
 
 	template<typename t_int>
 	static void g_fill(t_int * p_order,const t_size p_count) {
@@ -55,29 +70,3 @@ public:
 
 	t_size get_count() const {return m_data.get_size();}
 };
-
-
-namespace pfc {
-	template<typename t_list>
-	static bool guess_reorder_pattern(pfc::array_t<t_size> & out, const t_list & from, const t_list & to) {
-		typedef typename t_list::t_item t_item;
-		const t_size count = from.get_size();
-		if (count != to.get_size()) return false;
-		out.set_size(count);
-		for(t_size walk = 0; walk < count; ++walk) out[walk] = walk;
-		//required output: to[n] = from[out[n]];
-		typedef pfc::chain_list_v2_t<t_size> t_queue;
-		pfc::map_t<t_item, t_queue > content;
-		for(t_size walk = 0; walk < count; ++walk) {
-			content.find_or_add(from[walk]).add_item(walk);
-		}
-		for(t_size walk = 0; walk < count; ++walk) {
-			t_queue * q = content.query_ptr(to[walk]);
-			if (q == NULL) return false;
-			if (q->get_count() == 0) return false;
-			out[walk] = *q->first();
-			q->remove(q->first());
-		}
-		return true;
-	}
-}

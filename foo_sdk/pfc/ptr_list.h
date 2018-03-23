@@ -1,5 +1,4 @@
-#ifndef __PFC_PTR_LIST_H_
-#define __PFC_PTR_LIST_H_
+#pragma once
 
 namespace pfc {
 
@@ -39,7 +38,6 @@ namespace pfc {
 	};
 
 	typedef ptr_list_t<void> ptr_list;
+
+	template<typename item, typename base> class traits_t<ptr_list_t<item, base> > : public traits_t<base> {};
 }
-
-
-#endif //__PFC_PTR_LIST_H_

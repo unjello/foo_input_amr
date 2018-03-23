@@ -145,18 +145,24 @@ namespace {
 
 t_size config_object::get_data_raw(void * p_out,t_size p_bytes) {
 	t_size ret = 0;
-	get_data(&stream_writer_fixedbuffer(p_out,p_bytes,ret),abort_callback_impl());
+    stream_writer_fixedbuffer stream(p_out,p_bytes,ret);
+    abort_callback_dummy aborter;
+	get_data(&stream,aborter);
 	return ret;
 }
 
 t_size config_object::get_data_raw_length() {
 	t_size ret = 0;
-	get_data(&stream_writer_get_length(ret),abort_callback_impl());
+    stream_writer_get_length stream(ret);
+    abort_callback_dummy aborter;
+	get_data(&stream,aborter);
 	return ret;
 }
 
 void config_object::set_data_raw(const void * p_data,t_size p_bytes, bool p_notify) {
-	set_data(&stream_reader_memblock_ref(p_data,p_bytes),abort_callback_impl(),p_notify);
+    stream_reader_memblock_ref stream(p_data,p_bytes);
+    abort_callback_dummy aborter;
+	set_data(&stream,aborter,p_notify);
 }
 
 void config_object::set_data_string(const char * p_data,t_size p_length) {
@@ -164,7 +170,9 @@ void config_object::set_data_string(const char * p_data,t_size p_length) {
 }
 
 void config_object::get_data_string(pfc::string_base & p_out) {
-	get_data(&stream_writer_string(p_out),abort_callback_impl());
+    stream_writer_string stream(p_out);
+    abort_callback_dummy aborter;
+	get_data(&stream,aborter);
 }
 
 
@@ -172,7 +180,7 @@ void config_object::get_data_string(pfc::string_base & p_out) {
 
 
 void config_object_impl::get_data(stream_writer * p_stream,abort_callback & p_abort) const {
-	insync(m_sync);
+	inReadSync(m_sync);
 	p_stream->write_object(m_data.get_ptr(),m_data.get_size(),p_abort);
 }
 
@@ -180,7 +188,7 @@ void config_object_impl::set_data(stream_reader * p_stream,abort_callback & p_ab
 	core_api::ensure_main_thread();
 
 	{
-		insync(m_sync);
+		inWriteSync(m_sync);
 		m_data.set_size(0);
 		enum {delta = 1024};
 		t_uint8 buffer[delta];

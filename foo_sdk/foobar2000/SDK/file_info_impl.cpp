@@ -51,7 +51,7 @@ void file_info_impl::meta_remove_values(t_size p_index,const bit_array & p_mask)
 {
 	m_meta.remove_values(p_index,p_mask);
 	if (m_meta.get_value_count(p_index) == 0)
-		m_meta.remove_mask(bit_array_one(p_index));
+		m_meta.remove_mask(pfc::bit_array_one(p_index));
 }
 
 t_size file_info_impl::info_get_count() const
@@ -196,7 +196,7 @@ void file_info_impl_utils::meta_entry::insert_value(t_size p_value_index,const c
 {
 	pfc::string_simple temp;
 	temp.set_string(p_value,p_value_length);
-	pfc::insert_swap_t(m_values,temp,p_value_index);
+	pfc::insert_t(m_values,temp,p_value_index);
 }
 
 void file_info_impl_utils::meta_entry::modify_value(t_size p_value_index,const char * p_value,t_size p_value_length)
@@ -239,5 +239,5 @@ void file_info_impl_utils::info_storage::copy_from(const file_info & p_info)
 	t_size n, count;
 	count = p_info.info_get_count();
 	m_info.set_count(count);
-	for(n=0;n<count;n++) m_info[n].init(p_info.info_enum_name(n),infinite,p_info.info_enum_value(n),infinite);	
+	for(n=0;n<count;n++) m_info[n].init(p_info.info_enum_name(n),~0,p_info.info_enum_value(n),~0);	
 }

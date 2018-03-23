@@ -1,4 +1,8 @@
 #include "stdafx.h"
+#include "cue_parser.h"
+
+
+#define maximumCueTrackNumber 999
 
 namespace {
 	PFC_DECLARE_EXCEPTION(exception_cue,pfc::exception,"Invalid cuesheet");
@@ -20,16 +24,16 @@ static bool is_linebreak(char c)
 static void validate_file_type(const char * p_type,t_size p_type_length) {
 	if (
 		//standard types
-		stricmp_utf8_ex(p_type,p_type_length,"WAVE",infinite) != 0 && 
-		stricmp_utf8_ex(p_type,p_type_length,"MP3",infinite) != 0 && 
-		stricmp_utf8_ex(p_type,p_type_length,"AIFF",infinite) != 0 && 
+		stricmp_utf8_ex(p_type,p_type_length,"WAVE",pfc_infinite) != 0 && 
+		stricmp_utf8_ex(p_type,p_type_length,"MP3",pfc_infinite) != 0 && 
+		stricmp_utf8_ex(p_type,p_type_length,"AIFF",pfc_infinite) != 0 && 
 		//common user-entered types
-		stricmp_utf8_ex(p_type,p_type_length,"APE",infinite) != 0 && 
-		stricmp_utf8_ex(p_type,p_type_length,"FLAC",infinite) != 0 &&
-		stricmp_utf8_ex(p_type,p_type_length,"WV",infinite) != 0 &&
-		stricmp_utf8_ex(p_type,p_type_length,"WAVPACK",infinite) != 0
+		stricmp_utf8_ex(p_type,p_type_length,"APE",pfc_infinite) != 0 && 
+		stricmp_utf8_ex(p_type,p_type_length,"FLAC",pfc_infinite) != 0 &&
+		stricmp_utf8_ex(p_type,p_type_length,"WV",pfc_infinite) != 0 &&
+		stricmp_utf8_ex(p_type,p_type_length,"WAVPACK",pfc_infinite) != 0
 		)
-		throw exception_cue(pfc::string_formatter() << "expected WAVE, MP3 or AIFF, got : \"" << pfc::string8(p_type,p_type_length) << "\"");
+		pfc::throw_exception_with_message< exception_cue >(PFC_string_formatter() << "expected WAVE, MP3 or AIFF, got : \"" << pfc::string_part(p_type,p_type_length) << "\"");
 }
 
 namespace {
@@ -62,8 +66,8 @@ namespace {
 		static bool is_known_meta(const char * p_name,t_size p_length)
 		{
 			static const char * metas[] = {"genre","date","discid","comment","replaygain_track_gain","replaygain_track_peak","replaygain_album_gain","replaygain_album_peak"};
-			for(t_size n=0;n<tabsize(metas);n++) {
-				if (!stricmp_utf8_ex(p_name,p_length,metas[n],infinite)) return true;
+			for(t_size n=0;n<PFC_TABSIZE(metas);n++) {
+				if (!stricmp_utf8_ex(p_name,p_length,metas[n],pfc_infinite)) return true;
 			}
 			return false;
 		}
@@ -83,7 +87,7 @@ namespace {
 						ptr++;
 						unsigned value_base = ptr;
 						while(ptr < p_comment_length && p_comment[ptr] != '\"') ptr++;
-						if (ptr == p_comment_length) throw exception_cue("invalid REM syntax",0);
+						if (ptr == p_comment_length) pfc::throw_exception_with_message<exception_cue>("invalid REM syntax");
 						if (ptr > value_base) on_meta(p_comment,name_length,p_comment + value_base,ptr - value_base);
 					}
 					else
@@ -97,23 +101,23 @@ namespace {
 		}
 		void on_title(const char * p_title,t_size p_title_length)
 		{
-			on_meta("title",infinite,p_title,p_title_length);
+			on_meta("title",pfc_infinite,p_title,p_title_length);
 		}
 		void on_songwriter(const char * p_songwriter,t_size p_songwriter_length) {
-			on_meta("songwriter",infinite,p_songwriter,p_songwriter_length);
+			on_meta("songwriter",pfc_infinite,p_songwriter,p_songwriter_length);
 		}
 		void on_performer(const char * p_performer,t_size p_performer_length)
 		{
-			on_meta("artist",infinite,p_performer,p_performer_length);
+			on_meta("artist",pfc_infinite,p_performer,p_performer_length);
 		}
 
 		void on_isrc(const char * p_isrc,t_size p_isrc_length)
 		{
-			on_meta("isrc",infinite,p_isrc,p_isrc_length);
+			on_meta("isrc",pfc_infinite,p_isrc,p_isrc_length);
 		}
 		void on_catalog(const char * p_catalog,t_size p_catalog_length)
 		{
-			on_meta("catalog",infinite,p_catalog,p_catalog_length);
+			on_meta("catalog",pfc_infinite,p_catalog,p_catalog_length);
 		}
 		void on_flags(const char * p_flags,t_size p_flags_length) {}
 	};
@@ -134,10 +138,10 @@ namespace {
 		
 		void on_track(unsigned p_index,const char * p_type,t_size p_type_length)
 		{
-			if (stricmp_utf8_ex(p_type,p_type_length,"audio",infinite)) throw exception_cue("only tracks of type AUDIO supported",0);
+			if (stricmp_utf8_ex(p_type,p_type_length,"audio",pfc_infinite)) pfc::throw_exception_with_message<exception_cue>("only tracks of type AUDIO supported");
 			//if (p_index != m_track + 1) throw exception_cue("cuesheet tracks out of order");
 			if (m_track != 0) finalize_track();
-			if (m_file.is_empty()) throw exception_cue("declaring a track with no file set",0);
+			if (m_file.is_empty()) pfc::throw_exception_with_message<exception_cue>("declaring a track with no file set");
 			m_trackfile = m_file;
 			m_track = p_index;
 		}
@@ -177,13 +181,13 @@ namespace {
 	private:
 		void finalize_track()
 		{
-			if (!m_index1_set) throw exception_cue("INDEX 01 not set",0);
+			if (!m_index1_set) pfc::throw_exception_with_message< exception_cue > ("INDEX 01 not set");
 			if (!m_index0_set) m_index_list.m_positions[0] = m_index_list.m_positions[1] - m_pregap;
-			if (!m_index_list.is_valid()) throw exception_cue("invalid index list");
+			if (!m_index_list.is_valid()) pfc::throw_exception_with_message< exception_cue > ("invalid index list");
 
 			cue_parser::t_cue_entry_list::iterator iter;
 			iter = m_out.insert_last();
-			if (m_trackfile.is_empty()) throw exception_cue("track has no file assigned",0);
+			if (m_trackfile.is_empty()) pfc::throw_exception_with_message< exception_cue > ("track has no file assigned");
 			iter->m_file = m_trackfile;
 			iter->m_track_number = m_track;
 			iter->m_indexes = m_index_list;
@@ -211,10 +215,10 @@ namespace {
 
 		void on_track(unsigned p_index,const char * p_type,t_size p_type_length)
 		{
-			if (p_index == 0) throw exception_cue("invalid TRACK index",0);
+			if (p_index == 0) pfc::throw_exception_with_message< exception_cue > ("invalid TRACK index");
 			if (p_index == m_wanted_track)
 			{
-				if (stricmp_utf8_ex(p_type,p_type_length,"audio",infinite)) throw exception_cue("only tracks of type AUDIO supported",0);
+				if (stricmp_utf8_ex(p_type,p_type_length,"audio",pfc_infinite)) pfc::throw_exception_with_message< exception_cue > ("only tracks of type AUDIO supported");
 			}
 			m_track = p_index;
 			m_totaltracks++;
@@ -242,12 +246,12 @@ namespace {
 			if (m_track == 0) //globals
 			{
 				//convert global title to album
-				if (!stricmp_utf8_ex(p_name,p_name_length,"title",infinite))
+				if (!stricmp_utf8_ex(p_name,p_name_length,"title",pfc_infinite))
 				{
 					p_name = "album";
 					p_name_length = 5;
 				}
-				else if (!stricmp_utf8_ex(p_name,p_name_length,"artist",infinite))
+				else if (!stricmp_utf8_ex(p_name,p_name_length,"artist",pfc_infinite))
 				{
 					m_album_artist.set_string(p_value,p_value_length);
 				}
@@ -258,7 +262,7 @@ namespace {
 			{
 				if (!m_is_va)
 				{
-					if (!stricmp_utf8_ex(p_name,p_name_length,"artist",infinite))
+					if (!stricmp_utf8_ex(p_name,p_name_length,"artist",pfc_infinite))
 					{
 						if (!m_album_artist.is_empty())
 						{
@@ -281,7 +285,7 @@ namespace {
 
 		void finalize()
 		{
-			if (!m_index1_set) throw exception_cue("INDEX 01 not set",0);
+			if (!m_index1_set) pfc::throw_exception_with_message< exception_cue > ("INDEX 01 not set");
 			if (!m_index0_set) m_indexes.m_positions[0] = m_indexes.m_positions[1] - m_pregap;
 			m_indexes.to_infos(m_out);
 
@@ -324,8 +328,8 @@ namespace {
 				if (!rg.set_from_meta(iter->m_name,iter->m_value))
 					m_out.meta_set(iter->m_name,iter->m_value);
 			}
-			m_out.meta_set("tracknumber",pfc::string_formatter() << m_wanted_track);
-			m_out.meta_set("totaltracks", pfc::string_formatter() << m_totaltracks);
+			m_out.meta_set("tracknumber",PFC_string_formatter() << m_wanted_track);
+			m_out.meta_set("totaltracks", PFC_string_formatter() << m_totaltracks);
 			m_out.set_replaygain(rg);
 
 		}
@@ -381,7 +385,7 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 {
 	t_size ptr = 0;
 	while(ptr < p_line_length && !is_spacing(p_line[ptr])) ptr++;
-	if (!stricmp_utf8_ex(p_line,ptr,"file",infinite))
+	if (!stricmp_utf8_ex(p_line,ptr,"file",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		t_size file_base,file_length, type_base,type_length;
@@ -391,7 +395,7 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 			ptr++;
 			file_base = ptr;
 			while(ptr < p_line_length && p_line[ptr] != '\"') ptr++;
-			if (ptr == p_line_length) throw exception_cue("invalid FILE syntax",0);
+			if (ptr == p_line_length) pfc::throw_exception_with_message< exception_cue > ("invalid FILE syntax");
 			file_length = ptr - file_base;
 			ptr++;
 			while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
@@ -409,18 +413,18 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 		type_length = ptr - type_base;
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 
-		if (ptr != p_line_length || file_length == 0 || type_length == 0) throw exception_cue("invalid FILE syntax",0);
+		if (ptr != p_line_length || file_length == 0 || type_length == 0) pfc::throw_exception_with_message< exception_cue > ("invalid FILE syntax");
 
 		p_callback.on_file(p_line + file_base, file_length, p_line + type_base, type_length);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"track",infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"track",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 
 		t_size track_base = ptr, track_length;
 		while(ptr < p_line_length && !is_spacing(p_line[ptr]))
 		{
-			if (!is_numeric(p_line[ptr])) throw exception_cue("invalid TRACK syntax",0);
+			if (!is_numeric(p_line[ptr])) pfc::throw_exception_with_message< exception_cue > ("invalid TRACK syntax");
 			ptr++;
 		}
 		track_length = ptr - track_base;
@@ -431,13 +435,13 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 		type_length = ptr - type_base;
 
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
-		if (ptr != p_line_length || type_length == 0) throw exception_cue("invalid TRACK syntax",0);
+		if (ptr != p_line_length || type_length == 0) pfc::throw_exception_with_message< exception_cue > ("invalid TRACK syntax");
 		unsigned track = pfc::atoui_ex(p_line+track_base,track_length);
-		if (track < 1 || track > 99) throw exception_cue("invalid track number",0);
+		if (track < 1 || track > maximumCueTrackNumber) pfc::throw_exception_with_message< exception_cue > ("invalid track number");
 
 		p_callback.on_track(track,p_line + type_base, type_length);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"index",infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"index",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 
@@ -445,7 +449,7 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 		index_base = ptr;
 		while(ptr < p_line_length && !is_spacing(p_line[ptr]))
 		{
-			if (!is_numeric(p_line[ptr])) throw exception_cue("invalid INDEX syntax",0);
+			if (!is_numeric(p_line[ptr])) pfc::throw_exception_with_message< exception_cue > ("invalid INDEX syntax" );
 			ptr++;
 		}
 		index_length = ptr - index_base;
@@ -455,7 +459,7 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 		while(ptr < p_line_length && !is_spacing(p_line[ptr]))
 		{
 			if (!is_numeric(p_line[ptr]) && p_line[ptr] != ':')
-				throw exception_cue("invalid INDEX syntax",0);
+				pfc::throw_exception_with_message< exception_cue > ("invalid INDEX syntax");
 			ptr++;
 		}
 		time_length = ptr - time_base;
@@ -463,15 +467,15 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		
 		if (ptr != p_line_length || index_length == 0 || time_length == 0)
-			throw exception_cue("invalid INDEX syntax",0);
+			pfc::throw_exception_with_message< exception_cue > ("invalid INDEX syntax");
 
 		unsigned index = pfc::atoui_ex(p_line+index_base,index_length);
-		if (index > 99) throw exception_cue("invalid INDEX syntax",0);
+		if (index > maximumCueTrackNumber) pfc::throw_exception_with_message< exception_cue > ("invalid INDEX syntax");
 		unsigned time = cuesheet_parse_index_time_ticks_e(p_line + time_base,time_length);
 		
 		p_callback.on_index(index,time);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"pregap",infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"pregap",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 
@@ -480,7 +484,7 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 		while(ptr < p_line_length && !is_spacing(p_line[ptr]))
 		{
 			if (!is_numeric(p_line[ptr]) && p_line[ptr] != ':')
-				throw exception_cue("invalid PREGAP syntax",0);
+				pfc::throw_exception_with_message< exception_cue > ("invalid PREGAP syntax");
 			ptr++;
 		}
 		time_length = ptr - time_base;
@@ -488,26 +492,26 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		
 		if (ptr != p_line_length || time_length == 0)
-			throw exception_cue("invalid PREGAP syntax",0);
+			pfc::throw_exception_with_message< exception_cue > ("invalid PREGAP syntax");
 
 		unsigned time = cuesheet_parse_index_time_ticks_e(p_line + time_base,time_length);
 		
 		p_callback.on_pregap(time);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"title",infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"title",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
-		if (ptr == p_line_length) throw exception_cue("invalid TITLE syntax",0);
+		if (ptr == p_line_length) pfc::throw_exception_with_message< exception_cue > ("invalid TITLE syntax");
 		if (p_line[ptr] == '\"')
 		{
 			ptr++;
 			t_size base = ptr;
 			while(ptr < p_line_length && p_line[ptr] != '\"') ptr++;
-			if (ptr == p_line_length) throw exception_cue("invalid TITLE syntax",0);
+			if (ptr == p_line_length) pfc::throw_exception_with_message< exception_cue > ("invalid TITLE syntax");
 			t_size length = ptr-base;
 			ptr++;
 			while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
-			if (ptr != p_line_length) throw exception_cue("invalid TITLE syntax",0);
+			if (ptr != p_line_length) pfc::throw_exception_with_message< exception_cue > ("invalid TITLE syntax");
 			p_callback.on_title(p_line+base,length);
 		}
 		else
@@ -515,20 +519,20 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 			p_callback.on_title(p_line+ptr,p_line_length-ptr);
 		}
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"performer",infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"performer",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
-		if (ptr == p_line_length) throw exception_cue("invalid PERFORMER syntax",0);
+		if (ptr == p_line_length) pfc::throw_exception_with_message< exception_cue > ("invalid PERFORMER syntax");
 		if (p_line[ptr] == '\"')
 		{
 			ptr++;
 			t_size base = ptr;
 			while(ptr < p_line_length && p_line[ptr] != '\"') ptr++;
-			if (ptr == p_line_length) throw exception_cue("invalid PERFORMER syntax",0);
+			if (ptr == p_line_length) pfc::throw_exception_with_message< exception_cue > ("invalid PERFORMER syntax");
 			t_size length = ptr-base;
 			ptr++;
 			while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
-			if (ptr != p_line_length) throw exception_cue("invalid PERFORMER syntax",0);
+			if (ptr != p_line_length) pfc::throw_exception_with_message< exception_cue > ("invalid PERFORMER syntax");
 			p_callback.on_performer(p_line+base,length);
 		}
 		else
@@ -536,20 +540,20 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 			p_callback.on_performer(p_line+ptr,p_line_length-ptr);
 		}
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"songwriter",infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"songwriter",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
-		if (ptr == p_line_length) throw exception_cue("invalid SONGWRITER syntax",0);
+		if (ptr == p_line_length) pfc::throw_exception_with_message< exception_cue > ("invalid SONGWRITER syntax");
 		if (p_line[ptr] == '\"')
 		{
 			ptr++;
 			t_size base = ptr;
 			while(ptr < p_line_length && p_line[ptr] != '\"') ptr++;
-			if (ptr == p_line_length) throw exception_cue("invalid SONGWRITER syntax",0);
+			if (ptr == p_line_length) pfc::throw_exception_with_message< exception_cue > ("invalid SONGWRITER syntax");
 			t_size length = ptr-base;
 			ptr++;
 			while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
-			if (ptr != p_line_length) throw exception_cue("invalid SONGWRITER syntax",0);
+			if (ptr != p_line_length) pfc::throw_exception_with_message< exception_cue > ("invalid SONGWRITER syntax");
 			p_callback.on_songwriter(p_line+base,length);
 		}
 		else
@@ -557,38 +561,38 @@ static void g_parse_cue_line(const char * p_line,t_size p_line_length,cue_parser
 			p_callback.on_songwriter(p_line+ptr,p_line_length-ptr);
 		}
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"isrc",infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"isrc",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		t_size length = p_line_length - ptr;
-		if (length == 0) throw exception_cue("invalid ISRC syntax",0);
+		if (length == 0) pfc::throw_exception_with_message< exception_cue > ("invalid ISRC syntax");
 		p_callback.on_isrc(p_line+ptr,length);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"catalog",infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"catalog",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		t_size length = p_line_length - ptr;
-		if (length == 0) throw exception_cue("invalid CATALOG syntax",0);
+		if (length == 0) pfc::throw_exception_with_message< exception_cue > ("invalid CATALOG syntax");
 		p_callback.on_catalog(p_line+ptr,length);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"flags",infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"flags",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		if (ptr < p_line_length)
 			p_callback.on_flags(p_line + ptr, p_line_length - ptr);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"rem",infinite))
+	else if (!stricmp_utf8_ex(p_line,ptr,"rem",pfc_infinite))
 	{
 		while(ptr < p_line_length && is_spacing(p_line[ptr])) ptr++;
 		if (ptr < p_line_length)
 			p_callback.on_comment(p_line + ptr, p_line_length - ptr);
 	}
-	else if (!stricmp_utf8_ex(p_line,ptr,"postgap",infinite)) {
-		throw exception_cue("POSTGAP is not supported",0);
-	} else if (!stricmp_utf8_ex(p_line,ptr,"cdtextfile",infinite)) {
+	else if (!stricmp_utf8_ex(p_line,ptr,"postgap",pfc_infinite)) {
+		pfc::throw_exception_with_message< exception_cue > ("POSTGAP is not supported");
+	} else if (!stricmp_utf8_ex(p_line,ptr,"cdtextfile",pfc_infinite)) {
 		//do nothing
 	}
-	else throw exception_cue("unknown cuesheet item",0);
+	else pfc::throw_exception_with_message< exception_cue > ("unknown cuesheet item");
 }
 
 static void g_parse_cue(const char * p_cuesheet,cue_parser_callback & p_callback)
@@ -597,7 +601,7 @@ static void g_parse_cue(const char * p_cuesheet,cue_parser_callback & p_callback
 	t_size lineidx = 1;
 	while(*parseptr)
 	{
-		while(is_spacing(*parseptr)) *parseptr++;
+		while(is_spacing(*parseptr)) parseptr++;
 		if (*parseptr)
 		{
 			t_size length = 0;
@@ -606,7 +610,7 @@ static void g_parse_cue(const char * p_cuesheet,cue_parser_callback & p_callback
 				try {
 					g_parse_cue_line(parseptr,length,p_callback);
 				} catch(exception_cue const & e) {//rethrow with line info
-					throw exception_cue(pfc::string_formatter() << e.what() << " (line " << lineidx << ")");
+					pfc::throw_exception_with_message< exception_cue > (PFC_string_formatter() << e.what() << " (line " << (unsigned)lineidx << ")");
 				}
 			}
 			parseptr += length;
@@ -624,7 +628,7 @@ void cue_parser::parse(const char *p_cuesheet,t_cue_entry_list & p_out) {
 		g_parse_cue(p_cuesheet,callback);
 		callback.finalize();
 	} catch(exception_cue const & e) {
-		throw exception_bad_cuesheet(pfc::string_formatter() << "Error parsing cuesheet: " << e.what());
+        pfc::throw_exception_with_message<exception_bad_cuesheet>(PFC_string_formatter() << "Error parsing cuesheet: " << e.what());
 	}
 }
 void cue_parser::parse_info(const char * p_cuesheet,file_info & p_info,unsigned p_index) {
@@ -633,7 +637,7 @@ void cue_parser::parse_info(const char * p_cuesheet,file_info & p_info,unsigned 
 		g_parse_cue(p_cuesheet,callback);
 		callback.finalize();
 	} catch(exception_cue const & e) {
-		throw exception_bad_cuesheet(pfc::string_formatter() << "Error parsing cuesheet: " << e.what());
+        pfc::throw_exception_with_message< exception_bad_cuesheet > (PFC_string_formatter() << "Error parsing cuesheet: " << e.what());
 	}
 }
 
@@ -670,10 +674,10 @@ namespace {
 		
 		void on_track(unsigned p_index,const char * p_type,t_size p_type_length)
 		{
-			if (stricmp_utf8_ex(p_type,p_type_length,"audio",infinite)) throw exception_cue("only tracks of type AUDIO supported",0);
+			if (stricmp_utf8_ex(p_type,p_type_length,"audio",pfc_infinite)) pfc::throw_exception_with_message< exception_cue > ("only tracks of type AUDIO supported");
 			//if (p_index != m_track + 1) throw exception_cue("cuesheet tracks out of order",0);
 			if (m_track != 0) finalize_track();
-			if (m_file.is_empty()) throw exception_cue("declaring a track with no file set",0);
+			if (m_file.is_empty()) pfc::throw_exception_with_message< exception_cue > ("declaring a track with no file set");
 			m_trackfile = m_file;
 			m_track = p_index;
 		}
@@ -715,10 +719,10 @@ namespace {
 	private:
 		void finalize_track()
 		{
-			if (m_track < 1 || m_track > 99) throw exception_cue("track number out of range",0);
-			if (!m_index1_set) throw exception_cue("INDEX 01 not set",0);
+			if (m_track < 1 || m_track > maximumCueTrackNumber) pfc::throw_exception_with_message< exception_cue > ("track number out of range");
+			if (!m_index1_set) pfc::throw_exception_with_message< exception_cue > ("INDEX 01 not set");
 			if (!m_index0_set) m_indexes.m_positions[0] = m_indexes.m_positions[1] - m_pregap;
-			if (!m_indexes.is_valid()) throw exception_cue("invalid index list");
+			if (!m_indexes.is_valid()) pfc::throw_exception_with_message< exception_cue > ("invalid index list");
 
 			cue_creator::t_entry_list::iterator iter;
 			iter = m_out.insert_last();
@@ -759,6 +763,116 @@ void cue_parser::parse_full(const char * p_cuesheet,cue_creator::t_entry_list & 
 			}
 		}
 	} catch(exception_cue const & e) {
-		throw exception_bad_cuesheet(pfc::string_formatter() << "Error parsing cuesheet: " << e.what());
+        pfc::throw_exception_with_message< exception_bad_cuesheet > (PFC_string_formatter() << "Error parsing cuesheet: " << e.what());
 	}
+}
+
+namespace file_info_record_helper {
+	namespace {
+		class __file_info_record__info__enumerator {
+		public:
+			__file_info_record__info__enumerator(file_info & p_out) : m_out(p_out) {}
+			void operator() (const char * p_name, const char * p_value) { m_out.__info_add_unsafe(p_name, p_value); }
+		private:
+			file_info & m_out;
+		};
+
+		class __file_info_record__meta__enumerator {
+		public:
+			__file_info_record__meta__enumerator(file_info & p_out) : m_out(p_out) {}
+			template<typename t_value> void operator() (const char * p_name, const t_value & p_value) {
+				t_size index = ~0;
+				for (typename t_value::const_iterator iter = p_value.first(); iter.is_valid(); ++iter) {
+					if (index == ~0) index = m_out.__meta_add_unsafe(p_name, *iter);
+					else m_out.meta_add_value(index, *iter);
+				}
+			}
+		private:
+			file_info & m_out;
+		};
+	}
+
+	void file_info_record::from_info(const file_info & p_info) {
+		reset();
+		m_length = p_info.get_length();
+		m_replaygain = p_info.get_replaygain();
+		from_info_overwrite_meta(p_info);
+		from_info_overwrite_info(p_info);
+	}
+	void file_info_record::to_info(file_info & p_info) const {
+		p_info.reset();
+		p_info.set_length(m_length);
+		p_info.set_replaygain(m_replaygain);
+
+		{
+			__file_info_record__info__enumerator e(p_info);
+			m_info.enumerate(e);
+		}
+		{
+			__file_info_record__meta__enumerator e(p_info);
+			m_meta.enumerate(e);
+		}
+	}
+
+	void file_info_record::reset() {
+		m_meta.remove_all(); m_info.remove_all();
+		m_length = 0;
+		m_replaygain = replaygain_info_invalid;
+	}
+
+	void file_info_record::from_info_overwrite_info(const file_info & p_info) {
+		for (t_size infowalk = 0, infocount = p_info.info_get_count(); infowalk < infocount; ++infowalk) {
+			m_info.set(p_info.info_enum_name(infowalk), p_info.info_enum_value(infowalk));
+		}
+	}
+	void file_info_record::from_info_overwrite_meta(const file_info & p_info) {
+		for (t_size metawalk = 0, metacount = p_info.meta_get_count(); metawalk < metacount; ++metawalk) {
+			const t_size valuecount = p_info.meta_enum_value_count(metawalk);
+			if (valuecount > 0) {
+				t_meta_value & entry = m_meta.find_or_add(p_info.meta_enum_name(metawalk));
+				entry.remove_all();
+				for (t_size valuewalk = 0; valuewalk < valuecount; ++valuewalk) {
+					entry.add_item(p_info.meta_enum_value(metawalk, valuewalk));
+				}
+			}
+		}
+	}
+
+	void file_info_record::from_info_overwrite_rg(const file_info & p_info) {
+		m_replaygain = replaygain_info::g_merge(m_replaygain, p_info.get_replaygain());
+	}
+
+	void file_info_record::merge_overwrite(const file_info & p_info) {
+		from_info_overwrite_info(p_info);
+		from_info_overwrite_meta(p_info);
+		from_info_overwrite_rg(p_info);
+	}
+
+	void file_info_record::transfer_meta_entry(const char * p_name, const file_info & p_info, t_size p_index) {
+		const t_size count = p_info.meta_enum_value_count(p_index);
+		if (count == 0) {
+			m_meta.remove(p_name);
+		} else {
+			t_meta_value & val = m_meta.find_or_add(p_name);
+			val.remove_all();
+			for (t_size walk = 0; walk < count; ++walk) {
+				val.add_item(p_info.meta_enum_value(p_index, walk));
+			}
+		}
+	}
+
+	void file_info_record::meta_set(const char * p_name, const char * p_value) {
+		m_meta.find_or_add(p_name).set_single(p_value);
+	}
+
+	const file_info_record::t_meta_value * file_info_record::meta_query_ptr(const char * p_name) const {
+		return m_meta.query_ptr(p_name);
+	}
+
+
+	void file_info_record::from_info_set_meta(const file_info & p_info) {
+		m_meta.remove_all();
+		from_info_overwrite_meta(p_info);
+	}
+
 }

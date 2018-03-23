@@ -1,3 +1,5 @@
+#pragma once
+
 static HBITMAP CreateDIB24(CSize size) {
 	struct {
 		BITMAPINFOHEADER bmi;
@@ -43,16 +45,59 @@ static HBITMAP CreateDIB8(CSize size, const COLORREF palette[256]) {
 	return CreateDIBSection(NULL, reinterpret_cast<const BITMAPINFO*>(&bi), DIB_RGB_COLORS,&bitsPtr,0,0);
 }
 
+static void CreateScaledFont(CFont & out, CFontHandle in, double scale) {
+	LOGFONT lf;
+	WIN32_OP_D( in.GetLogFont(lf) );
+	int temp = pfc::rint32(scale * lf.lfHeight);
+	if (temp == 0) temp = pfc::sgn_t(lf.lfHeight);
+	lf.lfHeight = temp;
+	WIN32_OP_D( out.CreateFontIndirect(&lf) != NULL );
+}
+
+static void CreateScaledFontEx(CFont & out, CFontHandle in, double scale, int weight) {
+	LOGFONT lf;
+	WIN32_OP_D( in.GetLogFont(lf) );
+	int temp = pfc::rint32(scale * lf.lfHeight);
+	if (temp == 0) temp = pfc::sgn_t(lf.lfHeight);
+	lf.lfHeight = temp;
+	lf.lfWeight = weight;
+	WIN32_OP_D( out.CreateFontIndirect(&lf) != NULL );
+}
+
+static void CreatePreferencesHeaderFont(CFont & out, CWindow source) {
+	CreateScaledFontEx(out, source.GetFont(), 1.3, FW_BOLD);
+}
+
+static void CreatePreferencesHeaderFont2(CFont & out, CWindow source) {
+	CreateScaledFontEx(out, source.GetFont(), 1.1, FW_BOLD);
+}
+
+template<typename TCtrl>
+class CAltFontCtrl : public TCtrl {
+public:
+	void Initialize(CWindow wnd, double scale, int weight) {
+		CreateScaledFontEx(m_font, wnd.GetFont(), scale, weight);
+		_initWnd(wnd);
+	}
+	void MakeHeader(CWindow wnd) {
+		CreatePreferencesHeaderFont(m_font, wnd);
+		_initWnd(wnd);
+	}
+	void MakeHeader2(CWindow wnd) {
+		CreatePreferencesHeaderFont2(m_font, wnd);
+		_initWnd(wnd);
+	}
+private:
+	void _initWnd(CWindow wnd) {
+		SubclassWindow(wnd); SetFont(m_font);
+	}
+	CFont m_font;
+};
+
 class CFontScaled : public CFont {
 public:
 	CFontScaled(HFONT _in, double scale) {
-		CFontHandle in(_in);
-		LOGFONT lf;
-		WIN32_OP_D( in.GetLogFont(lf) );
-		int temp = pfc::rint32(scale * lf.lfHeight);
-		if (temp == 0) temp = pfc::sgn_t(lf.lfHeight);
-		lf.lfHeight = temp;
-		WIN32_OP_D( CreateFontIndirect(&lf) != NULL );
+		CreateScaledFont(*this, _in, scale);
 	}
 };
 
@@ -191,4 +236,18 @@ private:
 	const CRect m_rcPaint;
 	CDCHandle m_dcOrig;
 	CRgn m_clipRgnOld;
+};
+
+class SetTextColorScope {
+public:
+	SetTextColorScope(HDC dc, COLORREF col) throw() : m_dc(dc) {
+		m_oldCol = SetTextColor(dc, col);
+	}
+	~SetTextColorScope() throw() {
+		SetTextColor(m_dc, m_oldCol);
+	}
+	PFC_CLASS_NOT_COPYABLE_EX(SetTextColorScope)
+private:
+	HDC m_dc;
+	COLORREF m_oldCol;
 };

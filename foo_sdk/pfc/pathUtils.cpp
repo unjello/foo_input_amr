@@ -2,7 +2,11 @@
 
 namespace pfc { namespace io { namespace path {
 
+#ifdef _WINDOWS
 static const string g_pathSeparators ("\\/|");
+#else
+static const string g_pathSeparators ("/");
+#endif
 
 string getFileName(string path) {
 	t_size split = path.lastIndexOfAnyChar(g_pathSeparators);
@@ -11,7 +15,7 @@ string getFileName(string path) {
 }
 string getFileNameWithoutExtension(string path) {
 	string fn = getFileName(path);
-	t_size split = path.lastIndexOf('.');
+	t_size split = fn.lastIndexOf('.');
 	if (split == ~0) return fn;
 	else return fn.subString(0,split);
 }
@@ -59,6 +63,10 @@ static string replaceIllegalChar(char c) {
 			return "x";
 		case '\"':
 			return "\'\'";
+		case ':':
+		case '/':
+		case '\\':
+			return "-";
 		default:
 			return "_";
 	}
@@ -82,8 +90,8 @@ string replaceIllegalPathChars(string fn) {
 	return output.toString();
 }
 
-string replaceIllegalNameChars(string fn) {
-	const string illegal = getIllegalNameChars();
+string replaceIllegalNameChars(string fn, bool allowWC) {
+	const string illegal = getIllegalNameChars(allowWC);
 	string_formatter output;
 	for(t_size walk = 0; walk < fn.length(); ++walk) {
 		const char c = fn[walk];
@@ -117,30 +125,52 @@ char getDefaultSeparator() {
 #ifdef _WINDOWS
 	return '\\';
 #else
-#error PORTME
+    return '/';
 #endif
 }
 
-static const string g_illegalNameChars(g_pathSeparators +
+static const string g_illegalNameChars(g_pathSeparators
 #ifdef _WINDOWS
-									   ":<>*?\""
+									   + ":<>*?\""
 #else
-#error PORTME
+                                       + "*?"
 #endif
 									   );
-
-string getIllegalNameChars() {
-	return g_illegalNameChars;
+    
+static const string g_illegalNameChars_noWC(g_pathSeparators
+#ifdef _WINDOWS
+									   + ":<>?\""
+#endif
+									   );
+string getIllegalNameChars(bool allowWC) {
+	return allowWC ? g_illegalNameChars_noWC : g_illegalNameChars;
 }
 
+#ifdef _WINDOWS
 static bool isIllegalTrailingChar(char c) {
 	return c == ' ' || c == '.';
 }
+static const char * const specialIllegalNames[] = {
+	"con", "aux", "lst", "prn", "nul", "eof", "inp", "out"
+};
+#endif
 
-string validateFileName(string name) {
-	while(name.endsWith('?')) name = name.subString(0, name.length() - 1);
+string validateFileName(string name, bool allowWC) {
+	for(t_size walk = 0; name[walk];) {
+		if (name[walk] == '?') {
+			t_size end = walk;
+			do { ++end; } while(name[end] == '?');
+			if ( walk == 0 && name[end] == '.' ) {
+				name = string("[unnamed]") + name.subString(end);
+			} else {
+				name = name.subString(0, walk) + name.subString(end);
+			}			
+		} else {
+			++walk;
+		}
+	}
 #ifdef _WINDOWS
-	name = replaceIllegalNameChars(name);
+	name = replaceIllegalNameChars(name, allowWC);
 	if (name.length() > 0) {
 		t_size end = name.length();
 		while(end > 0) {
@@ -154,6 +184,14 @@ string validateFileName(string name) {
 		}
 		if (end < name.length() || begin > 0) name = name.subString(begin,end - begin);
 	}
+
+	for( unsigned w = 0; w < _countof(specialIllegalNames); ++w ) {
+		if (pfc::stringEqualsI_ascii( name.c_str(), specialIllegalNames[w] ) ) {
+			name += "-";
+			break;
+		}
+	}
+
 	if (name.isEmpty()) name = "_";
 	return name;
 #else

@@ -1,3 +1,5 @@
+#pragma once
+
 namespace pfc {
 
 	static void * raw_malloc(t_size p_size) {
@@ -6,13 +8,13 @@ namespace pfc {
 
 	static void raw_free(void * p_block) throw() {free(p_block);}
 
-	static void* raw_realloc(void * p_ptr,t_size p_size) {
+	inline void* raw_realloc(void * p_ptr,t_size p_size) {
 		if (p_size == 0) {raw_free(p_ptr); return NULL;}
 		else if (p_ptr == NULL) return raw_malloc(p_size);
 		else return pfc::new_ptr_check_t(::realloc(p_ptr,p_size));
 	}
 
-	static bool raw_realloc_inplace(void * p_block,t_size p_size) throw() {
+	inline bool raw_realloc_inplace(void * p_block,t_size p_size) throw() {
 		if (p_block == NULL) return p_size == 0;
 #ifdef _MSC_VER
 		if (p_size == 0) return false;
@@ -74,6 +76,7 @@ namespace pfc {
 		t_item * get_ptr() {throw pfc::exception_not_implemented();}
 		void prealloc(t_size) {throw pfc::exception_not_implemented();}
 		void force_reset() {throw pfc::exception_not_implemented();}
+		void move_from(t_self &) {throw pfc::exception_not_implemented();}
 	private:
 		const t_self & operator=(const t_self &) {throw pfc::exception_not_implemented();}
 		alloc_dummy(const t_self&) {throw pfc::exception_not_implemented();}
@@ -119,9 +122,15 @@ namespace pfc {
 		void force_reset() {set_size(0);}
 
 		~alloc_simple() {delete[] m_data;}
+
+		void move_from(t_self & other) {
+			delete[] m_data;
+			m_data = replace_null_t(other.m_data);
+			m_size = replace_null_t(other.m_size);
+		}
 	private:
-		const t_self & operator=(const t_self &) {throw pfc::exception_not_implemented();}
-		alloc_simple(const t_self&) {throw pfc::exception_not_implemented();}
+		const t_self & operator=(const t_self &) = delete;
+		alloc_simple(const t_self&) = delete;
 
 		t_item * m_data;
 		t_size m_size;
@@ -131,7 +140,7 @@ namespace pfc {
 	private:
 		typedef __array_fast_helper_t<t_item> t_self;
 	public:
-		__array_fast_helper_t() : m_buffer(NULL), m_size_total(0), m_size(0) {}
+		__array_fast_helper_t() : m_buffer(NULL), m_size(0), m_size_total(0) {}
 		
 
 		void set_size(t_size p_size,t_size p_size_total) {
@@ -158,9 +167,16 @@ namespace pfc {
 		t_item * get_ptr() {return m_buffer;}
 		const t_item * get_ptr() const {return m_buffer;}
 		bool is_ptr_owned(const void * p_item) const {return is_pointer_in_range(m_buffer,m_size_total,p_item);}
+
+		void move_from(t_self & other) {
+			set_size(0,0);
+			m_buffer = replace_null_t(other.m_buffer);
+			m_size = replace_null_t(other.m_size);
+			m_size_total = replace_null_t(other.m_size_total);
+		}
 	private:
-		const t_self & operator=(const t_self &) {throw pfc::exception_not_implemented();}
-		__array_fast_helper_t(const t_self &) {throw pfc::exception_not_implemented();}
+		const t_self & operator=(const t_self &) = delete;
+		__array_fast_helper_t(const t_self &) = delete;
 
 
 		void resize_content(t_size p_size) {
@@ -209,11 +225,93 @@ namespace pfc {
 		t_size m_size,m_size_total;
 	};
 
+	template<typename t_item> class __array_lite_helper_t {
+	private:
+		typedef __array_lite_helper_t<t_item> t_self;
+	public:
+		__array_lite_helper_t() : m_buffer(NULL), m_size(0) {}
+		
+
+		void set_size(t_size p_size) {
+			if (p_size > m_size) { // expand
+				resize_storage(p_size);
+				resize_content(p_size);
+			} else if (p_size < m_size) { // shrink
+				resize_content(p_size);
+				resize_storage(p_size);
+			}
+		}
+
+
+
+		t_size get_size() const {return m_size;}
+		const t_item & operator[](t_size p_index) const {PFC_ASSERT(p_index < m_size); return m_buffer[p_index];}
+		t_item & operator[](t_size p_index) {PFC_ASSERT(p_index < m_size); return m_buffer[p_index];}
+		~__array_lite_helper_t() {
+			set_size(0);
+		}
+		t_item * get_ptr() {return m_buffer;}
+		const t_item * get_ptr() const {return m_buffer;}
+		bool is_ptr_owned(const void * p_item) const {return is_pointer_in_range(m_buffer,m_size,p_item);}
+
+		void move_from(t_self & other) {
+			set_size(0);
+			m_buffer = replace_null_t(other.m_buffer);
+			m_size = replace_null_t(other.m_size);
+		}
+	private:
+		const t_self & operator=(const t_self &) = delete;
+		__array_lite_helper_t(const t_self &) = delete;
+
+
+		void resize_content(t_size p_size) {
+			if (traits_t<t_item>::needs_constructor || traits_t<t_item>::needs_destructor) {
+				if (p_size > m_size) {//expand
+					do {
+						__unsafe__in_place_constructor_t(m_buffer[m_size]);
+						m_size++;
+					} while(m_size < p_size);
+				} else if (p_size < m_size) {
+					__unsafe__in_place_destructor_array_t(m_buffer + p_size, m_size - p_size);
+					m_size = p_size;
+				}
+			} else {
+				m_size = p_size;
+			}
+		}
+
+		void resize_storage(t_size p_size) {
+			PFC_ASSERT( m_size <= p_size );
+			if (pfc::traits_t<t_item>::realloc_safe) {
+				m_buffer = pfc::__raw_realloc_t(m_buffer,p_size);
+				//m_size_total = p_size;
+			} else if (__raw_realloc_inplace_t(m_buffer,p_size)) {
+				//success
+				//m_size_total = p_size;
+			} else {
+				t_item * newbuffer = pfc::__raw_malloc_t<t_item>(p_size);
+				try {
+					pfc::__unsafe__in_place_constructor_array_copy_t(newbuffer,m_size,m_buffer);
+				} catch(...) {
+					pfc::__raw_free_t(newbuffer);
+					throw;
+				}
+				pfc::__unsafe__in_place_destructor_array_t(m_buffer,m_size);
+				pfc::__raw_free_t(m_buffer);
+				m_buffer = newbuffer;
+				//m_size_total = p_size;
+			}
+		}
+
+		t_item * m_buffer;
+		t_size m_size;
+	};
+
 	template<typename t_item> class alloc_standard {
 	private: typedef alloc_standard<t_item> t_self;
 	public:
 		alloc_standard() {}
-		void set_size(t_size p_size) {m_content.set_size(p_size,p_size);}
+		void set_size(t_size p_size) {m_content.set_size(p_size);}
 		
 		t_size get_size() const {return m_content.get_size();}
 		
@@ -228,11 +326,13 @@ namespace pfc {
 		void force_reset() {set_size(0);}
 		
 		enum { alloc_prioritizes_speed = false };
-	private:
-		alloc_standard(const t_self &) {throw pfc::exception_not_implemented();}
-		const t_self & operator=(const t_self&) {throw pfc::exception_not_implemented();}
 
-		__array_fast_helper_t<t_item> m_content;
+		void move_from(t_self & other) { m_content.move_from(other.m_content); }
+	private:
+		alloc_standard(const t_self &) = delete;
+		const t_self & operator=(const t_self&) = delete;
+
+		__array_lite_helper_t<t_item> m_content;
 	};
 
 	template<typename t_item> class alloc_fast {
@@ -263,9 +363,11 @@ namespace pfc {
 		void force_reset() {m_data.set_size(0,0);}
 		
 		enum { alloc_prioritizes_speed = true };
+
+		void move_from(t_self & other) { m_data.move_from(other.m_data); }
 	private:
-		alloc_fast(const t_self &) {throw pfc::exception_not_implemented();}
-		const t_self & operator=(const t_self&) {throw pfc::exception_not_implemented();}
+		alloc_fast(const t_self &) = delete;
+		const t_self & operator=(const t_self&) = delete;
 		__array_fast_helper_t<t_item> m_data;
 	};
 
@@ -304,9 +406,11 @@ namespace pfc {
 		void force_reset() {m_data.set_size(0,0);}
 
 		enum { alloc_prioritizes_speed = true };
+
+		void move_from(t_self & other) { m_data.move_from(other.m_data); }
 	private:
-		alloc_fast_aggressive(const t_self &) {throw pfc::exception_not_implemented();}
-		const t_self & operator=(const t_self&) {throw pfc::exception_not_implemented();}
+		alloc_fast_aggressive(const t_self &) = delete;
+		const t_self & operator=(const t_self&) = delete;
 		__array_fast_helper_t<t_item> m_data;
 	};
 
@@ -318,7 +422,7 @@ namespace pfc {
 			alloc() : m_size(0) {}
 
 			void set_size(t_size p_size) {
-				static_assert<sizeof(m_array) == sizeof(t_item[p_width])>();
+				static_assert_t<sizeof(m_array) == sizeof(t_item[p_width])>();
 
 				if (p_size > p_width) throw pfc::exception_overflow();
 				else if (p_size > m_size) {
@@ -346,6 +450,12 @@ namespace pfc {
 			void force_reset() {set_size(0);}
 
 			enum { alloc_prioritizes_speed = false };
+
+			void move_from(t_self & other) {
+                const size_t count = other.get_size();
+                set_size( count );
+                for(size_t w = 0; w < count; ++w) this->get_ptr()[w] = other.get_ptr()[w];
+            }
 		private:
 			alloc(const t_self&) {throw pfc::exception_not_implemented();}
 			const t_self& operator=(const t_self&) {throw pfc::exception_not_implemented();}
@@ -393,6 +503,11 @@ namespace pfc {
 				m_fixed.force_reset(); m_variable.force_reset();
 			}
 			enum { alloc_prioritizes_speed = t_alloc<t_item>::alloc_prioritizes_speed };
+
+			void move_from(t_self & other) {
+				m_fixed.move_from(other.m_fixed);
+				m_variable.move_from(other.m_variable);
+			}
 		private:
 			alloc(const t_self&) {throw pfc::exception_not_implemented();}
 			const t_self& operator=(const t_self&) {throw pfc::exception_not_implemented();}
@@ -419,4 +534,6 @@ namespace pfc {
 	template<t_size p_width,template<typename> class t_alloc,typename t_item>
 	class traits_t<typename alloc_hybrid<p_width,t_alloc>::template alloc<t_item> > : public traits_combined<t_alloc,typename alloc_fixed<p_width>::template alloc<t_item> > {};
 #endif
+
+
 };

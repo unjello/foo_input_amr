@@ -58,8 +58,7 @@ bool menu_helpers::is_command_checked_context(const GUID & p_command,const GUID 
 bool menu_helpers::is_command_checked_context_playlist(const GUID & p_command,const GUID & p_subcommand)
 {
 	metadb_handle_list temp;
-	static_api_ptr_t<playlist_manager> api;
-	api->activeplaylist_get_selected_items(temp);
+	playlist_manager::get()->activeplaylist_get_selected_items(temp);
 	return g_is_checked(p_command,p_subcommand,temp,contextmenu_item::caller_playlist);
 }
 
@@ -72,15 +71,14 @@ bool menu_helpers::is_command_checked_context_playlist(const GUID & p_command,co
 bool menu_helpers::run_command_context_playlist(const GUID & p_command,const GUID & p_subcommand)
 {
 	metadb_handle_list temp;
-	static_api_ptr_t<playlist_manager> api;
-	api->activeplaylist_get_selected_items(temp);
+	playlist_manager::get()->activeplaylist_get_selected_items(temp);
 	return run_command_context_ex(p_command,p_subcommand,temp,contextmenu_item::caller_playlist);
 }
 
 bool menu_helpers::run_command_context_now_playing(const GUID & p_command,const GUID & p_subcommand)
 {
 	metadb_handle_ptr item;
-	if (!static_api_ptr_t<playback_control>()->get_now_playing(item)) return false;//not playing
+	if (!playback_control::get()->get_now_playing(item)) return false;//not playing
 	return run_command_context_ex(p_command,p_subcommand,pfc::list_single_ref_t<metadb_handle_ptr>(item),contextmenu_item::caller_now_playing);
 }
 
@@ -96,7 +94,7 @@ bool menu_helpers::guid_from_name(const char * p_name,unsigned p_name_len,GUID &
 		for(n=0;n<m;n++)
 		{
 			ptr->get_item_name(n,nametemp);
-			if (!strcmp_ex(nametemp,infinite,p_name,p_name_len))
+			if (!strcmp_ex(nametemp,~0,p_name,p_name_len))
 			{
 				p_out = ptr->get_item_guid(n);
 				return true;
@@ -185,7 +183,7 @@ menu_helpers::guid_to_name_table::~guid_to_name_table()
 
 int menu_helpers::name_to_guid_table::entry_compare_search(const entry & entry1,const search_entry & entry2)
 {
-	return stricmp_utf8_ex(entry1.m_name,infinite,entry2.m_name,entry2.m_name_len);
+	return stricmp_utf8_ex(entry1.m_name,~0,entry2.m_name,entry2.m_name_len);
 }
 
 int menu_helpers::name_to_guid_table::entry_compare(const entry & entry1,const entry & entry2)
@@ -290,37 +288,8 @@ bool standard_commands::run_main(const GUID & p_guid) {
 }
 
 bool menu_item_resolver::g_resolve_context_command(const GUID & id, contextmenu_item::ptr & out, t_uint32 & out_index) {
-	menu_item_resolver::ptr api;
-	if (service_enum_t<menu_item_resolver>().first(api)) {
-		return api->resolve_context_command(id, out, out_index);
-	} else {
-		service_enum_t<contextmenu_item> e; service_ptr_t<contextmenu_item> ptr;
-		while(e.next(ptr)) {
-			const unsigned num_actions = ptr->get_num_items();
-			for(unsigned action=0;action<num_actions;action++) {
-				if (id == ptr->get_item_guid(action)) {
-					out_index = action; out = ptr; return true;
-				}
-			}
-		}
-		return false;
-	}
+	return menu_item_resolver::get()->resolve_context_command(id, out, out_index);
 }
 bool menu_item_resolver::g_resolve_main_command(const GUID & id, mainmenu_commands::ptr & out, t_uint32 & out_index) {
-	menu_item_resolver::ptr api;
-	if (service_enum_t<menu_item_resolver>().first(api)) {
-		return api->resolve_main_command(id, out, out_index);
-	} else {
-		service_enum_t<mainmenu_commands> e; service_ptr_t<mainmenu_commands> ptr;
-		while(e.next(ptr)) {
-			const t_uint32 total = ptr->get_command_count();
-			for(t_uint32 walk = 0; walk < total; ++walk) {
-				if (id == ptr->get_command(walk)) {
-					out_index = walk; out = ptr; return true;
-				}
-			}
-		}
-		return false;
-	}
+	return menu_item_resolver::get()->resolve_main_command(id, out, out_index);
 }
-

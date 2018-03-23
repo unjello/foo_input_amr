@@ -1,13 +1,32 @@
 #include "foobar2000.h"
+
+#ifdef FOOBAR2000_HAVE_DSP
+
 #include <math.h>
+
+audio_chunk * dsp_chunk_list::add_item(t_size hint_size) { return insert_item(get_count(), hint_size); }
+
+void dsp_chunk_list::remove_all() { remove_mask(pfc::bit_array_true()); }
+
+double dsp_chunk_list::get_duration() {
+	double rv = 0;
+	t_size n, m = get_count();
+	for (n = 0; n<m; n++) rv += get_item(n)->get_duration();
+	return rv;
+}
+
+void dsp_chunk_list::add_chunk(const audio_chunk * chunk) {
+	audio_chunk * dst = insert_item(get_count(), chunk->get_used_size());
+	if (dst) dst->copy(*chunk);
+}
 
 t_size dsp_chunk_list_impl::get_count() const {return m_data.get_count();}
 
-audio_chunk * dsp_chunk_list_impl::get_item(t_size n) const {return n>=0 && n<m_data.get_count() ? &*m_data[n] : 0;}
+audio_chunk * dsp_chunk_list_impl::get_item(t_size n) const {return n<m_data.get_count() ? &*m_data[n] : 0;}
 
 void dsp_chunk_list_impl::remove_by_idx(t_size idx)
 {
-	if (idx>=0 && idx<m_data.get_count())
+	if (idx<m_data.get_count())
 		m_recycled.add_item(m_data.remove_by_idx(idx));
 }
 
@@ -23,8 +42,7 @@ void dsp_chunk_list_impl::remove_mask(const bit_array & mask)
 audio_chunk * dsp_chunk_list_impl::insert_item(t_size idx,t_size hint_size)
 {
 	t_size max = get_count();
-	if (idx<0) idx=0;
-	else if (idx>max) idx = max;
+	if (idx>max) idx = max;
 	pfc::rcptr_t<audio_chunk> ret;
 	if (m_recycled.get_count()>0)
 	{
@@ -76,6 +94,26 @@ void dsp_chunk_list::remove_bad_chunks()
 	if (blah) console::info("one or more bad chunks removed from dsp chunk list");
 }
 
+bool dsp_entry_hidden::g_dsp_exists(const GUID & p_guid) {
+	dsp_entry_hidden::ptr p;
+	return g_get_interface(p, p_guid);
+}
+
+bool dsp_entry_hidden::g_get_interface( dsp_entry_hidden::ptr & out, const GUID & guid ) {
+	service_enum_t<dsp_entry_hidden> e; service_ptr_t<dsp_entry_hidden> p;
+	while( e.next(p) ) {
+		if (p->get_guid() == guid) {
+			out = p; return true;
+		}
+	}
+	return false;
+}
+
+bool dsp_entry_hidden::g_instantiate( dsp::ptr & out, const dsp_preset & preset ) {
+	dsp_entry_hidden::ptr i;
+	if (!g_get_interface(i, preset.get_owner())) return false;
+	return i->instantiate(out, preset);
+}
 
 bool dsp_entry::g_instantiate(service_ptr_t<dsp> & p_out,const dsp_preset & p_preset)
 {
@@ -115,7 +153,7 @@ bool dsp_entry::g_get_default_preset(dsp_preset & p_out,const GUID & p_guid)
 }
 
 void dsp_chain_config::contents_to_stream(stream_writer * p_stream,abort_callback & p_abort) const {
-	t_size n, count = get_count();
+    uint32_t n, count = pfc::downcast_guarded<uint32_t>( get_count() );
 	p_stream->write_lendian_t(count,p_abort);
 	for(n=0;n<count;n++) {
 		get_item(n).contents_to_stream(p_stream,p_abort);
@@ -138,9 +176,8 @@ void dsp_chain_config::contents_from_stream(stream_reader * p_stream,abort_callb
 }
 
 
-bool cfg_dsp_chain_config::get_data(dsp_chain_config & p_data) const {
+void cfg_dsp_chain_config::get_data(dsp_chain_config & p_data) const {
 	p_data.copy(m_data);
-	return true;
 }
 
 void cfg_dsp_chain_config::set_data(const dsp_chain_config & p_data) {
@@ -159,9 +196,32 @@ void cfg_dsp_chain_config::set_data_raw(stream_reader * p_stream,t_size,abort_ca
 	m_data.contents_from_stream(p_stream,p_abort);
 }
 
+void cfg_dsp_chain_config_mt::reset() {
+	dsp_chain_config_impl dummy; set_data(dummy);
+}
+void cfg_dsp_chain_config_mt::get_data(dsp_chain_config & p_data) {
+	inReadSync( m_sync );
+	p_data.copy(m_data);
+}
+void cfg_dsp_chain_config_mt::set_data(const dsp_chain_config & p_data) {
+	inWriteSync( m_sync );
+	m_data.copy( p_data );
+}
+
+void cfg_dsp_chain_config_mt::get_data_raw(stream_writer * p_stream, abort_callback & p_abort) {
+	dsp_chain_config_impl temp;
+	get_data( temp );
+	temp.contents_to_stream( p_stream, p_abort );
+}
+void cfg_dsp_chain_config_mt::set_data_raw(stream_reader * p_stream, t_size p_sizehint, abort_callback & p_abort) {
+	dsp_chain_config_impl temp; temp.contents_from_stream( p_stream, p_abort );
+	set_data( temp );
+}
+
+
 void dsp_chain_config::remove_item(t_size p_index)
 {
-	remove_mask(bit_array_one(p_index));
+	remove_mask(pfc::bit_array_one(p_index));
 }
 
 void dsp_chain_config::add_item(const dsp_preset & p_data)
@@ -171,7 +231,7 @@ void dsp_chain_config::add_item(const dsp_preset & p_data)
 
 void dsp_chain_config::remove_all()
 {
-	remove_mask(bit_array_true());
+	remove_mask(pfc::bit_array_true());
 }
 
 void dsp_chain_config::instantiate(service_list_t<dsp> & p_out)
@@ -181,9 +241,15 @@ void dsp_chain_config::instantiate(service_list_t<dsp> & p_out)
 	for(n=0;n<m;n++)
 	{
 		service_ptr_t<dsp> temp;
-		if (dsp_entry::g_instantiate(temp,get_item(n)))
+		auto const & preset = this->get_item(n);
+		if (dsp_entry::g_instantiate(temp,preset) || dsp_entry_hidden::g_instantiate(temp, preset))
 			p_out.add_item(temp);
 	}
+}
+
+void dsp_chain_config_impl::reorder(const size_t * order, size_t count) {
+	PFC_ASSERT( count == m_data.get_count() );
+	m_data.reorder( order );
 }
 
 t_size dsp_chain_config_impl::get_count() const
@@ -217,7 +283,7 @@ dsp_chain_config_impl::~dsp_chain_config_impl()
 }
 
 void dsp_preset::contents_to_stream(stream_writer * p_stream,abort_callback & p_abort) const {
-	t_size size = get_data_size();
+    t_uint32 size = pfc::downcast_guarded<t_uint32>(get_data_size());
 	p_stream->write_lendian_t(get_owner(),p_abort);
 	p_stream->write_lendian_t(size,p_abort);
 	if (size > 0) {
@@ -290,13 +356,9 @@ void dsp_entry::g_show_config_popup_v2(const dsp_preset & p_preset,HWND p_parent
 
 bool dsp_entry::g_get_interface(service_ptr_t<dsp_entry> & p_out,const GUID & p_guid)
 {
-	service_ptr_t<dsp_entry> ptr;
-	service_enum_t<dsp_entry> e;
-	e.reset();
-	while(e.next(ptr))
-	{
-		if (ptr->get_guid() == p_guid)
-		{
+	service_ptr_t<dsp_entry> ptr; service_enum_t<dsp_entry> e;
+	while(e.next(ptr)) {
+		if (ptr->get_guid() == p_guid) {
 			p_out = ptr;
 			return true;
 		}
@@ -306,30 +368,42 @@ bool dsp_entry::g_get_interface(service_ptr_t<dsp_entry> & p_out,const GUID & p_
 
 bool resampler_entry::g_get_interface(service_ptr_t<resampler_entry> & p_out,unsigned p_srate_from,unsigned p_srate_to)
 {
-	service_ptr_t<dsp_entry> ptr_dsp;
-	service_ptr_t<resampler_entry> ptr_resampler;
-	service_enum_t<dsp_entry> e;
-	e.reset();
-	float found_priority = 0;
-	service_ptr_t<resampler_entry> found;
-	while(e.next(ptr_dsp))
+#if FOOBAR2000_TARGET_VERSION >= 79
+	auto r = resampler_manager::get()->get_resampler( p_srate_from, p_srate_to );
+	bool v = r.is_valid();
+	if ( v ) p_out = std::move(r);
+	return v;
+#else
 	{
-		if (ptr_dsp->service_query_t(ptr_resampler))
+		resampler_manager::ptr api;
+		if ( resampler_manager::tryGet(api) ) {
+			auto r = api->get_resampler( p_srate_from, p_srate_to );
+			bool v = r.is_valid();
+			if (v) p_out = std::move(r);
+			return v;
+		}
+	}
+
+	resampler_entry::ptr ptr_resampler;
+	service_enum_t<dsp_entry> e;
+	float found_priority = 0;
+	resampler_entry::ptr found;
+	while(e.next(ptr_resampler))
+	{
+		if (p_srate_from == 0 || ptr_resampler->is_conversion_supported(p_srate_from,p_srate_to))
 		{
-			if (p_srate_from == 0 || ptr_resampler->is_conversion_supported(p_srate_from,p_srate_to))
+			float priority = ptr_resampler->get_priority();
+			if (found.is_empty() || priority > found_priority)
 			{
-				float priority = ptr_resampler->get_priority();
-				if (found.is_empty() || priority > found_priority)
-				{
-					found = ptr_resampler;
-					found_priority = priority;
-				}
+				found = ptr_resampler;
+				found_priority = priority;
 			}
 		}
 	}
 	if (found.is_empty()) return false;
 	p_out = found;
 	return true;
+#endif
 }
 
 bool resampler_entry::g_create_preset(dsp_preset & p_out,unsigned p_srate_from,unsigned p_srate_to,float p_qualityscale)
@@ -349,6 +423,14 @@ bool resampler_entry::g_create(service_ptr_t<dsp> & p_out,unsigned p_srate_from,
 }
 
 
+bool dsp_chain_config::equals(dsp_chain_config const & v1, dsp_chain_config const & v2) {
+	const t_size count = v1.get_count();
+	if (count != v2.get_count()) return false;
+	for(t_size walk = 0; walk < count; ++walk) {
+		if (v1.get_item(walk) != v2.get_item(walk)) return false;
+	}
+	return true;
+}
 void dsp_chain_config::get_name_list(pfc::string_base & p_out) const
 {
 	const t_size count = get_count();
@@ -387,9 +469,15 @@ namespace {
 bool dsp_entry_v2::show_config_popup(dsp_preset & p_data,HWND p_parent) {
 	PFC_ASSERT(p_data.get_owner() == get_guid());
 	dsp_preset_impl temp(p_data);
-	show_config_popup_v2(p_data,p_parent,dsp_preset_edit_callback_impl(temp));
+    
+    {
+        dsp_preset_edit_callback_impl cb(temp);
+        show_config_popup_v2(p_data,p_parent,cb);
+    }
 	PFC_ASSERT(temp.get_owner() == get_guid());
 	if (temp == p_data) return false;
 	p_data = temp;
 	return true;
 }
+
+#endif // FOOBAR2000_HAVE_DSP
