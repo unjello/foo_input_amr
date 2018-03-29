@@ -1,4 +1,4 @@
-Name "Adaptive Multirate component v1.1.1"
+Name "Adaptive Multirate component v1.1.2"
 OutFile "foo_input_amr.exe"
 
 !packhdr "foo_input_amr.dat" "upx.exe --best --crp-ms=999999 foo_input_amr.dat"
