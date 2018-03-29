@@ -1,0 +1,14 @@
+.vs/
+Backup/
+Release/
+Debug/
+UpgradeLog*.htm
+foo_amr/Release
+foo_amr/Debug
+foo_sdk/foobar2000/SDK/Release
+foo_sdk/foobar2000/SDK/Debug
+foo_sdk/foobar2000/foobar2000_component_client/Release
+foo_sdk/foobar2000/foobar2000_component_client/Debug
+foo_sdk/pfc/Release
+foo_sdk/pfc/Debug
+
