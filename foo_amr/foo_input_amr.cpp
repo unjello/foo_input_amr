@@ -1,12 +1,5 @@
 /**
  * foo_input_amr - amr-nb decoder for foobar2000
- *
- * $Id$
- *
- * @package    foo_input_amr
- * @author     Andrzej Lichnerowicz
- * @copyright  (c) 2003-2009 Andrzej Lichnerowicz
- * @license    http://angelo.scene.pl/foo_input_amr_license.txt
 */
 
 /* include foobar sdk */
