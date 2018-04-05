@@ -1,6 +1,7 @@
 /**
  * foo_input_amr - amr-nb decoder for foobar2000
 */
+#include <cstdint>
 
 /* include foobar sdk */
 #include "../foo_sdk/foobar2000/SDK/foobar2000.h"
@@ -35,6 +36,31 @@ enum {
 	/** 
 	 * @} 
 	 */
+};
+
+enum rx_frame_type {
+	rx_ft_speech_good = 0,
+	rx_ft_speech_degraded,
+	rx_ft_onset,
+	rx_ft_speech_bad,
+	rx_ft_sid_first,
+	rx_ft_sid_update,
+	rx_ft_sid_bad,
+	rx_ft_no_data,
+	rx_ft_n_frametypes
+};
+
+enum amr_mode_type {
+	amr_475 = 0,
+	amr_515,
+	amr_59,
+	amr_67,
+	amr_74,
+	amr_795,
+	amr_102,
+	amr_122,
+	amr_dtx,
+	amr_n_modes
 };
 
 /**
@@ -84,17 +110,29 @@ protected:
 	unsigned decode_length(abort_callback & p_abort) {
 		char id;
 		unsigned size, frames = 0;
-
+		foobar2000_io::t_filesize total_size = m_start, file_size = m_file->get_size(p_abort);
 		/* seek at the begining of the first frame */
-		m_file->seek(m_start,p_abort);
+		m_file->seek(m_start, p_abort);
 		/* while we can stil read, go through frames */
-		while(m_file->read(&id,sizeof(char),p_abort)) {
+		while (m_file->read(&id, sizeof(char), p_abort)) {
+			const uint8_t ft = (id >> 3) & 0x0F;
+			bool no_data = false;
+			if (ft == 15 || (ft > 8 && ft < 15)) {
+				SPDLOG_TRACE(log, "Found no-data frame, ft: {}. Skipping", ft);
+			}
+			else {
+				SPDLOG_TRACE(log, "Found data frame, ft: {}, frames: {}", ft, frames);
+				/* increase number of frames */
+				++frames;
+			}
 			/* first byte is rate mode. each rate mode has frame of given length. look it up. */
-			size = m_block_size[(id >> 3) & 0x000F];
+			size = m_block_size[ft];
+
+			/* FIXME: there is something inherently broken with how I calculate frames here. Need to revise it. */
+			total_size += size + 1;
+			if (total_size > file_size) break;
 			/* we're not interested. just skip this frame, and go to another. */
 			m_file->seek_ex(size, file::seek_from_current, p_abort);
-			/* increase number of frames */
-			++frames;
 		}
 		/* go at the begining */
 		m_file->seek(0,p_abort);
@@ -125,6 +163,7 @@ public:
 	 * @since				1.0.0
 	 */
 	void open(service_ptr_t<file> p_filehint,const char * p_path,t_input_open_reason p_reason,abort_callback & p_abort) {
+		SPDLOG_DEBUG(log, "{}: attempt to open a file", p_path);
 		/* write access is called for retagging purposes. we do not support that, so throw an error */
 		if (p_reason == input_open_info_write) throw exception_io_unsupported_format();
 
@@ -133,12 +172,15 @@ public:
 
 		/* if file is null, open it - handled by the helper */
 		input_open_file_helper(m_file,p_path,p_reason,p_abort);
+		SPDLOG_DEBUG(log, "{}: file opened", p_path);
 
 		/* ensure input stream can seek */
 		m_file->ensure_seekable();
+		SPDLOG_DEBUG(log, "{}: file seekable", p_path);
 
 		/* store total frames count of amr file */
 		m_frames = decode_length(p_abort);
+		SPDLOG_DEBUG(log, "{}: frames count={}", p_path, m_frames);
 	}
 
 
@@ -151,6 +193,8 @@ public:
 	 * @since				1.1.0
 	 */
 	void get_info(file_info & p_info,abort_callback & p_abort) {
+		SPDLOG_DEBUG(log, "Get info");
+
 		p_info.set_length((double)m_frames*amr_audio_frame_size/amr_sample_rate);
 		p_info.info_set_bitrate((amr_bits_per_sample * amr_channels * amr_sample_rate + 500 /* rounding for bps to kbps*/ ) / 1000 /* bps to kbps */);
 		p_info.info_set_int("samplerate",amr_sample_rate);
@@ -168,6 +212,8 @@ public:
 	 * @since				1.0.0
 	 */
 	void decode_initialize(unsigned p_flags,abort_callback & p_abort) {
+		SPDLOG_DEBUG(log, "Initialize decoder: {}", p_flags);
+
 		/* equivalent to seek to zero, except it also works on nonseekable streams */
 		m_file->reopen(p_abort);
 
@@ -231,10 +277,14 @@ public:
 		char id;
 		unsigned size;
 
+		SPDLOG_DEBUG(log, "Seek {} seconds", p_seconds);
+
 		/* throw exceptions if someone called decode_seek() despite of our input having reported itself as nonseekable. */
 		m_file->ensure_seekable();
 		/* calculate target frame from given time */
 		t_filesize target = audio_math::time_to_samples(p_seconds, amr_sample_rate) / amr_audio_frame_size;
+
+		SPDLOG_DEBUG(log, "Target frame calculated at: {} ({}s at {}khz / {}b per frame", target, p_seconds, amr_sample_rate, amr_audio_frame_size);
 
 		/**
 		 * since there is no way to tell the position of given frame in the file stream 
@@ -270,14 +320,14 @@ public:
 	static bool g_is_our_content_type(const char * p_content_type) {
 		ensure_log_exists();
 		bool ret = stricmp_utf8(p_content_type,"audio/amr") == 0 || stricmp_utf8(p_content_type,"audio/x-amr") == 0; 
-		SPDLOG_TRACE(log, "Identify content-type '{}': {}", p_content_type, ret?"true":"false");
+		SPDLOG_DEBUG(log, "Identify content-type '{}': {}", p_content_type, ret?"true":"false");
 		return ret;
 	}
 	/* identify amr by file extension */
 	static bool g_is_our_path(const char * p_path,const char * p_extension) {
 		ensure_log_exists();
 		bool ret = stricmp_utf8(p_extension,"amr") == 0;
-		SPDLOG_TRACE(log, "Identify extension '{}': {}", p_extension, ret?"true":"false");
+		SPDLOG_DEBUG(log, "Identify extension '{}': {}", p_extension, ret?"true":"false");
 		return ret;
 	}
 
@@ -310,18 +360,9 @@ private:
 };
 
 /**
- * there are 8 varying levels of compression:
- * mode		bitrates
- * 0		amr 4.75
- * 1		amr 5.15
- * 2		amr 5.9
- * 3		amr 6.7
- * 4		amr 7.4
- * 5		amr 7.95
- * 6		amr 10.2
- * 7		amr 12.2
- * first byte of the frame specifies CMR (codec mode request), values 0-7 are valid for AMR.
- * each mode have different frame size. this table reflects that fact.
+ * There are 8 varying levels of compression. First byte of the frame specifies CMR 
+ * (codec mode request), values 0-7 are valid for AMR. Each mode have different frame size. 
+ * This table reflects that fact.
 */
 short input_amr::m_block_size[] =  { 12, 13, 15, 17, 19, 20, 26, 31, 5, 0, 0, 0, 0, 0, 0, 0 };
 /* each AMR-NB file consists of following 6-byte header */
