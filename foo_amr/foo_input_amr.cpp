@@ -267,9 +267,19 @@ public:
 	void retag(const file_info & p_info,abort_callback & p_abort) {throw exception_io_unsupported_format();}
 	
 	/* identify amr by content type */
-	static bool g_is_our_content_type(const char * p_content_type) {return stricmp_utf8(p_content_type,"audio/amr") == 0 || stricmp_utf8(p_content_type,"audio/x-amr") == 0; }
+	static bool g_is_our_content_type(const char * p_content_type) {
+		ensure_log_exists();
+		bool ret = stricmp_utf8(p_content_type,"audio/amr") == 0 || stricmp_utf8(p_content_type,"audio/x-amr") == 0; 
+		SPDLOG_TRACE(log, "Identify content-type '{}': {}", p_content_type, ret?"true":"false");
+		return ret;
+	}
 	/* identify amr by file extension */
-	static bool g_is_our_path(const char * p_path,const char * p_extension) {return stricmp_utf8(p_extension,"amr") == 0;}
+	static bool g_is_our_path(const char * p_path,const char * p_extension) {
+		ensure_log_exists();
+		bool ret = stricmp_utf8(p_extension,"amr") == 0;
+		SPDLOG_TRACE(log, "Identify extension '{}': {}", p_extension, ret?"true":"false");
+		return ret;
+	}
 
 public:
 	service_ptr_t<file> m_file;
@@ -282,9 +292,9 @@ public:
 	unsigned m_frames;
 	unsigned m_frame;
 
+private:
+	static void ensure_log_exists() {
 #ifdef _DEBUG
-public:
-	input_amr() {
 		if (!log) {
 			pfc::string8 tempPath;
 			if (!uGetTempPath(tempPath)) uBugCheck();
@@ -292,12 +302,9 @@ public:
 			log = spdlog::basic_logger_mt("amr", tempPath.c_str());
 			log->set_level(spdlog::level::trace);
 		}
+#endif
 	}
-	virtual ~input_amr() {
-		spdlog::drop_all();
-	}
-
-private:
+#ifdef _DEBUG
 	static std::shared_ptr<spdlog::logger> log;
 #endif
 };
