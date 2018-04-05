@@ -8,6 +8,12 @@
 extern "C" { 
 	#include "../3gpp/interf_dec.h" 
 }
+/* enable logging only in debug mode */
+#ifdef _DEBUG
+	#define SPDLOG_DEBUG_ON
+	#define SPDLOG_TRACE_ON
+#endif
+#include "spdlog\spdlog.h"
 
 enum {
 	/* AMR files have 8bit samples */
@@ -275,6 +281,25 @@ public:
 	unsigned char m_buffer[32];
 	unsigned m_frames;
 	unsigned m_frame;
+
+#ifdef _DEBUG
+public:
+	input_amr() {
+		if (!log) {
+			pfc::string8 tempPath;
+			if (!uGetTempPath(tempPath)) uBugCheck();
+			tempPath.add_filename("foo_input_amr.txt");
+			log = spdlog::basic_logger_mt("amr", tempPath.c_str());
+			log->set_level(spdlog::level::trace);
+		}
+	}
+	virtual ~input_amr() {
+		spdlog::drop_all();
+	}
+
+private:
+	static std::shared_ptr<spdlog::logger> log;
+#endif
 };
 
 /**
@@ -296,6 +321,9 @@ short input_amr::m_block_size[] =  { 12, 13, 15, 17, 19, 20, 26, 31, 5, 0, 0, 0,
 const char* input_amr::m_magic = "#!AMR\x0a";
 /* AMR frames start at 7-th byte */
 const unsigned input_amr::m_start = 7;
+#ifdef _DEBUG
+std::shared_ptr<spdlog::logger> input_amr::log;
+#endif
 
 /**
  * plugin factory 
